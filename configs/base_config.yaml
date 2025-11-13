@@ -19,10 +19,10 @@ cc_components: 10           # cc
 cc_temperature: 1.0         # cc
 
 # trainer
-epochs: 20
+epochs: 1
 lr: 1e-3
-device: cuda
-log_interval: 50
+device: auto            # "cuda" | "cpu" | "auto"
+
 
 hydra:
   run:
