@@ -1,7 +1,13 @@
 docs/site/
+data/*
+!data/.gitkeep
+trash_outputs/*
+!trash_outputs/.gitkeep
 
+outputs/
 # test cache
 manual_test/
+
 
 # other local dev info
 .vscode/
