@@ -119,7 +119,7 @@ def main(cfg: DictConfig):
 
         # Optional: plot every 10 epochs
         if epoch % 10 == 0 or epoch == epochs:
-            plot_training_progress(model, train_loader.dataset, epoch, device=device, n_samples=10000, save_path=plot_path)
+            plot_training_progress(model, train_loader.dataset, epoch, bottleneck=model_name, device=device, n_samples=10000, save_path=plot_path)
 
     # Visualize final results
     training_logs = {
@@ -128,9 +128,9 @@ def main(cfg: DictConfig):
         "kl": kl_hist
     }
 
-    plot_final_results(model, train_loader.dataset, training_logs, device=device, n_samples=1000, save_path="./Signeplots")
+    plot_final_results(model, train_loader.dataset, training_logs,  bottleneck=model_name, device=device, n_samples=1000, save_path=plot_path)
     if model_name in ("dirichlet", "dir", "cc"):
-        plot_dirichlet_simplex_nD(model, dataset, device=device, n_points=1000)
+        plot_dirichlet_simplex_nD(model, train_loader.dataset, bottleneck=model_name, device=device, n_points=1000, save_path=plot_path)
         
 if __name__ == "__main__":
     main()
