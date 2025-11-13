@@ -1,0 +1,31 @@
+# configs/base_config.yaml
+
+seed: 42
+
+# data (flat keys)
+dataset: mnist            # "mnist" | "medmnist"
+data_root: data
+batch_size: 256
+num_workers: 4
+val_split: 0.1
+medmnist_subset: pathmnist  # only used if dataset=medmnist
+
+# model (one at a time)
+model_name: gaussian        # gaussian | dirichlet | cc
+latent_dim: 16
+recon_loss: bce
+alpha_init: 0.3             # dirichlet
+cc_components: 10           # cc
+cc_temperature: 1.0         # cc
+
+# trainer
+epochs: 20
+lr: 1e-3
+device: cuda
+log_interval: 50
+
+hydra:
+  run:
+    dir: outputs/single/${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    name: train_vae
