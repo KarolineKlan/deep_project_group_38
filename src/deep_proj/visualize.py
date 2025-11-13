@@ -42,7 +42,7 @@ def plot_training_progress(model, dataset, epoch, device=None, n_samples=10000, 
     plt.tight_layout()
     if save_path:
         plt.savefig(f"{save_path}/progress_epoch_{epoch:03d}.png", dpi=150)
-    plt.show()
+    plt.close()
 
 
 
@@ -92,7 +92,7 @@ def plot_final_results(model, dataset, training_logs, device=None, n_samples=100
     plt.tight_layout()
     if save_path:
         plt.savefig(f"{save_path}/final_projections.png", dpi=150)
-    plt.show()
+    plt.close()
 
     # Reconstructions
     grid = torch.cat([xb, recon])
@@ -104,7 +104,7 @@ def plot_final_results(model, dataset, training_logs, device=None, n_samples=100
     plt.tight_layout()
     if save_path:
         plt.savefig(f"{save_path}/final_recons.png", dpi=150)
-    plt.show()
+    plt.close()
 
 
 
@@ -164,7 +164,7 @@ def plot_dirichlet_simplex_nD(model, dataset, device=None, n_points=10000, cmap=
     plt.tight_layout()
     if save_path:
         plt.savefig(f"{save_path}/dirichlet_simplex.png", dpi=150)
-    plt.show()
+    plt.close()
 
 
 ######################## Return latent vectors, labels, and example reconstructions ########################
@@ -183,6 +183,7 @@ def _get_latents_and_recons(model, dataset, device, n_samples=5000):
 
     for xb, yb in loader:
         xb = xb.to(device)
+        xb = xb.view(xb.size(0), -1)
         with torch.no_grad():
             logits, z, _, _ = model(xb)
         zs.append(z.cpu())
