@@ -123,7 +123,7 @@ def main(cfg: DictConfig):
     }
 
     plot_final_results(model, train_loader.dataset, training_logs, device=device, n_samples=1000, save_path="./Signeplots")
-    if model_name in ("dirichlet", "cc"):
+    if model_name in ("dirichlet", "dir", "cc"):
         plot_dirichlet_simplex_nD(model, dataset, device=device, n_points=1000)
         
 if __name__ == "__main__":
