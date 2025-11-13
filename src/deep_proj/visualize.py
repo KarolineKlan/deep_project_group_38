@@ -109,13 +109,14 @@ def plot_final_results(model, dataset, training_logs, device=None, n_samples=100
 
 
 #### Normalize the latent vectors to lie on the n-dimensional probability simplex, and then project them to 2D using a regular n-simplex embedding ####
-def plot_dirichlet_simplex_nD(model, dataset, device=None, n_points=10000, cmap="tab10"):
+def plot_dirichlet_simplex_nD(model, dataset, device=None, n_points=10000, cmap="tab10", save_path=None):
     """
     model: trained generative model with Dirichlet latent space
     dataset: dataset to sample from
     device: computation device (CPU or GPU)
     n_points: number of points to sample for plotting
     cmap: colormap for class labels
+    save_path: path to save the generated plot
     """
     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
     z, labels, _, _ = _get_latents_and_recons(model, dataset, device, n_samples=n_points)
@@ -161,6 +162,8 @@ def plot_dirichlet_simplex_nD(model, dataset, device=None, n_points=10000, cmap=
     fig.colorbar(scatter, ax=ax, label="Class label")
     ax.set_title(f"Latent vectors on simplex (n={n})", fontsize=12)
     plt.tight_layout()
+    if save_path:
+        plt.savefig(f"{save_path}/dirichlet_simplex.png", dpi=150)
     plt.show()
 
 
