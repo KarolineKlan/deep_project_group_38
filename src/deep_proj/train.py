@@ -128,8 +128,9 @@ def main(cfg: DictConfig):
         "kl": kl_hist
     }
 
-    plot_final_results(model, train_loader.dataset, training_logs, device=device, n_samples=1000, save_path=plot_path)
-    plot_dirichlet_simplex_nD(model, train_loader.dataset, device=device, n_points=1000, save_path=plot_path)
-
+    plot_final_results(model, train_loader.dataset, training_logs, device=device, n_samples=1000, save_path="./Signeplots")
+    if model_name in ("dirichlet", "dir", "cc"):
+        plot_dirichlet_simplex_nD(model, dataset, device=device, n_points=1000)
+        
 if __name__ == "__main__":
     main()
