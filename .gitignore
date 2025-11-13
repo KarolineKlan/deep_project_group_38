@@ -3,6 +3,11 @@ data/*
 !data/.gitkeep
 trash_outputs/*
 !trash_outputs/.gitkeep
+reports/figures/test
+
+# temporary signeplot files
+Signeplots/
+Signeplots1/
 
 outputs/
 # test cache

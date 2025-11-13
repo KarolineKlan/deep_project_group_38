@@ -2,6 +2,7 @@
 import hydra
 from omegaconf import DictConfig
 import torch
+import os
 
 from data import get_dataloaders
 from model import (
@@ -9,6 +10,11 @@ from model import (
     DirVAE,
     dirvae_elbo_loss,
     gaussian_vae_elbo_loss,
+)
+from visualize import (
+    plot_training_progress,
+    plot_final_results,
+    plot_dirichlet_simplex_nD,
 )
 
 
@@ -58,6 +64,16 @@ def main(cfg: DictConfig):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
+    # Define lists to store training history
+    train_loss_hist = []
+    recon_hist = []
+    kl_hist = []
+
+    # path
+    plot_path = "./reports/figures/test"
+    # Check if the folder exists, and create it if not
+    os.makedirs(plot_path, exist_ok=True)
+
     for epoch in range(1, epochs + 1):
         model.train()
         tot_loss = 0.0
@@ -88,6 +104,7 @@ def main(cfg: DictConfig):
             tot_recon += recon.item() * bs
             tot_kl += kl.item() * bs
 
+
         print(
             f"Epoch {epoch:02d} {tag} | "
             f"Loss {tot_loss / n:.4f} | "
@@ -95,6 +112,24 @@ def main(cfg: DictConfig):
             f"KL {tot_kl / n:.4f}"
         )
 
+        # Store average losses for this epoch
+        train_loss_hist.append(tot_loss / n)
+        recon_hist.append(tot_recon / n)
+        kl_hist.append(tot_kl / n)
+
+        # Optional: plot every 10 epochs
+        if epoch % 10 == 0 or epoch == epochs:
+            plot_training_progress(model, train_loader.dataset, epoch, device=device, n_samples=10000, save_path=plot_path)
+
+    # Visualize final results
+    training_logs = {
+        "loss": train_loss_hist,
+        "recon": recon_hist,
+        "kl": kl_hist
+    }
+
+    plot_final_results(model, train_loader.dataset, training_logs, device=device, n_samples=1000, save_path=plot_path)
+    plot_dirichlet_simplex_nD(model, train_loader.dataset, device=device, n_points=1000, save_path=plot_path)
 
 if __name__ == "__main__":
     main()

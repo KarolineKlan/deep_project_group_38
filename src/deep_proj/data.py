@@ -12,7 +12,7 @@ from omegaconf import DictConfig
 def _build_mnist(cfg: DictConfig):
     transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
+        transforms.Normalize((0.1307,), (0.3081,)) #https://stackoverflow.com/questions/63746182/correct-way-of-normalizing-and-scaling-the-mnist-dataset
     ])
     train_dataset = datasets.MNIST(
         cfg.data_root, train=True, download=True, transform=transform
