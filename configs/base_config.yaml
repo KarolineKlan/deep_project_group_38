@@ -1,4 +1,7 @@
 # configs/base_config.yaml
+# RUN WITH: python -m src.deep_proj.train 
+# or with: python -m src.deep_proj.train wandb.enabled=false
+
 
 seed: 42
 
@@ -11,7 +14,7 @@ val_split: 0.1
 medmnist_subset: pathmnist  # only used if dataset=medmnist
 
 # model (one at a time)
-model_name: gaussian        # gaussian | dirichlet | cc
+model_name: dirichlet        # gaussian | dirichlet | cc
 latent_dim: 50
 recon_loss: bce
 alpha_init: 0.98            # dirichlet
@@ -19,9 +22,21 @@ cc_components: 10           # cc
 cc_temperature: 1.0         # cc
 
 # trainer
-epochs: 1
+epochs: 20
 lr: 5e-4
 device: auto            # "cuda" | "cpu" | "auto"
+
+# visualization
+viz_every: 4      # or 1 if you want plots every epoch
+
+
+
+wandb:
+  enabled: true          # turn off with wandb.enabled=false
+  project: deep_vae      # whatever you want
+  entity: spicy-mlops    # <- W&B team slug
+  group: ${model_name}   # group runs by bottleneck type
+  mode: online           # or "offline" / "disabled"
 
 
 hydra:

@@ -4,7 +4,7 @@ data/*
 trash_outputs/*
 !trash_outputs/.gitkeep
 reports/figures/test
-
+wandb/
 # temporary signeplot files
 Signeplots/
 Signeplots1/
