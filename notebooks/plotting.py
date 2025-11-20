@@ -196,3 +196,132 @@ def _get_latents_and_recons(model, dataset, device, n_samples=5000):
         recon = torch.sigmoid(logits).cpu()
 
     return z, labels, xb_vis.cpu(), recon
+
+
+######################## SIGNE SIGNE SIGNE SIGNE SIGNE ########################
+import numpy as np
+import matplotlib.pyplot as plt
+import itertools
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+import matplotlib.patches as patches
+import torch
+import torchvision.utils as vutils
+
+# ---------------- Utility functions ----------------
+
+def get_polygon_vertices(n_vertices, radius=1.0):
+    angles = np.linspace(0, 2*np.pi, n_vertices, endpoint=False)
+    vertices = np.stack([np.cos(angles), np.sin(angles)], axis=1) * radius
+    return vertices
+
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
+
+def make_train_test_colormap(labels_train, labels_test, colormap_name="tab10"):
+    unique_labels = sorted(set(labels_train.tolist()) | set(labels_test.tolist()))
+    cmap = cm.get_cmap(colormap_name, len(unique_labels))
+    color_map = {label: mcolors.to_hex(cmap(i)) for i, label in enumerate(unique_labels)}
+    train_colors = [color_map[l] for l in labels_train]
+    test_colors = [color_map[l] for l in labels_test]
+    return train_colors, test_colors, color_map
+
+def find_closest_vectors(matrix, vectors):
+    dists = np.linalg.norm(matrix[:, None, :] - vectors[None, :, :], axis=2)
+    closest_idxs = dists.argmin(axis=0)
+    return closest_idxs
+
+def make_image_from_tensor(tensor, size=28):
+    """
+    Convert a MNIST tensor [1,H,W] or [H*W] to an image array for plotting
+    """
+    if tensor.ndim == 1:
+        tensor = tensor.view(1, int(np.sqrt(tensor.shape[0])), int(np.sqrt(tensor.shape[0])))
+    img = tensor.squeeze().cpu().numpy()
+    img = (img * 255).astype(np.uint8)
+    return img
+
+def get_imagebox_from_tensor(tensor, zoom=0.2):
+    img = make_image_from_tensor(tensor)
+    return OffsetImage(img, zoom=zoom, cmap='gray')
+
+
+# ---------------- Main plotting function ----------------
+
+def plot_dirvae_archetypes(z_train, z_test, labels_train, labels_test, images_train, images_test=None,
+                           midpoints=True, image_size=28, fig_size=(10, 11),
+                           plot_points=True, point_kwargs=None):
+    """
+    z_train: numpy array or tensor of latent vectors for training set (N x latent_dim)
+    z_test: same for test set
+    labels_train: array of train labels
+    labels_test: array of test labels
+    images_train: tensor of MNIST images [N, 1, 28, 28]
+    images_test: optional tensor of test images
+    """
+
+    if point_kwargs is None:
+        point_kwargs = {'s': 20, 'color': 'lightgrey', 'alpha': 0.6}
+
+    z_train = z_train.cpu().numpy() if torch.is_tensor(z_train) else z_train
+    z_test = z_test.cpu().numpy() if torch.is_tensor(z_test) else z_test
+    n_archetypes = z_train.shape[1]
+
+    # Polygon vertices for simplex
+    polygon_vertices = get_polygon_vertices(n_archetypes, radius=1.0)
+
+    fig = plt.figure(figsize=fig_size)
+    gs = fig.add_gridspec(2, 1, height_ratios=[6, 1], hspace=0.01)
+    ax = fig.add_subplot(gs[0])
+    ax.set_aspect('equal')
+    ax.axis('off')
+
+    train_colors, test_colors, color_map = make_train_test_colormap(labels_train, labels_test)
+
+    # --- 1. Draw edges of complete graph ---
+    for i, j in itertools.combinations(range(n_archetypes), 2):
+        pt1, pt2 = polygon_vertices[i], polygon_vertices[j]
+        ax.plot([pt1[0], pt2[0]], [pt1[1], pt2[1]], 'k--', alpha=0.5)
+
+    # --- 2. Project training points ---
+    projected_train = z_train @ polygon_vertices
+    for cls in sorted(set(labels_train.tolist())):
+        indices = [i for i, c in enumerate(labels_train) if c == cls]
+        ax.scatter(projected_train[indices, 0], projected_train[indices, 1],
+                   color=color_map[cls], s=20, alpha=0.7, edgecolor='black', linewidth=0.3)
+
+    # --- 3. Midpoints and images ---
+    if midpoints:
+        midpoint_loadings = []
+        midpoints_coords = []
+        for i, j in itertools.combinations(range(n_archetypes), 2):
+            v = np.zeros(n_archetypes)
+            v[i] = 0.5
+            v[j] = 0.5
+            midpoint_loadings.append(v)
+            pt1, pt2 = polygon_vertices[i], polygon_vertices[j]
+            midpoints_coords.append((pt1 + pt2) / 2)
+        midpoint_loadings = np.stack(midpoint_loadings)
+        closest_idxs = find_closest_vectors(z_train, midpoint_loadings)
+        for midpoint, idx in zip(midpoints_coords, closest_idxs):
+            img_tensor = images_train[idx]
+            imagebox = get_imagebox_from_tensor(img_tensor, zoom=0.15)
+            ab = AnnotationBbox(imagebox, midpoint, frameon=False, zorder=2)
+            ax.add_artist(ab)
+
+    # --- 4. Archetype images at vertices ---
+    for i in range(n_archetypes):
+        best_idx = np.argmax(z_train[:, i])
+        img_tensor = images_train[best_idx]
+        imagebox = get_imagebox_from_tensor(img_tensor, zoom=0.2)
+        ab = AnnotationBbox(imagebox, polygon_vertices[i], frameon=False, zorder=3)
+        ax.add_artist(ab)
+
+    # --- 5. Plot test points ---
+    if z_test is not None:
+        projected_test = z_test @ polygon_vertices
+        ax.scatter(projected_test[:, 0], projected_test[:, 1],
+                   c=test_colors, s=50, marker='X', alpha=0.7,
+                   edgecolor='black', linewidth=1, zorder=10)
+
+    plt.tight_layout()
+    plt.show()
