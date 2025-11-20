@@ -1,0 +1,31 @@
+#configs/wandb_sweep_config.yaml
+#program: src/deep_proj/train.py   # not strictly needed since we use `command`, but nice metadata
+
+#TO RUN SWEEP TYPE IN TERMINAL: wandb sweep configs/wandb_sweep_config.yaml
+#THEN TYPE: wandb agent <sweep_id>
+
+
+entity: spicy-mlops
+project: vae-bottlenecks-test
+name: vae-bottlenecks-karo-test
+method: grid
+
+parameters:
+  dataset:
+    values: ["mnist"]   #, "medmnist"]
+  model_name:
+    values: ["dirichlet", "gaussian"]    #, "cc"]
+  lr:
+    values: [5e-4]   #, 0.001, 0.003]
+  latent_dim:
+    values: [10, 50]  #, 50]
+
+
+command:
+  - ${env}
+  - python
+  - -m
+  - src.deep_proj.train
+  - --config-name
+  - base_config
+
