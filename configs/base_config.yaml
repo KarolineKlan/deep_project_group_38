@@ -1,7 +1,6 @@
 # configs/base_config.yaml
 # RUN WITH: python -m src.deep_proj.train 
-# or with: python -m src.deep_proj.train wandb.enabled=false
-
+# or without wandb: python -m src.deep_proj.train wandb.enabled=false
 
 seed: 42
 
