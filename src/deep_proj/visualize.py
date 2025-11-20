@@ -415,12 +415,14 @@ def visualize_model(model, epoch, loader, device, save_dir,
     axes[0].set_yticks([])
     fig.colorbar(sc, ax=axes[0])
 
-    # Save combined figure
-    out_path = os.path.join(save_dir,
-                            f"new_{model_name}_vis_epoch_{epoch}.png")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
+    fname = None
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        fname = os.path.join(
+            save_dir, f"{model_name}_progress_epoch_{epoch:03d}.png"
+        )
+        plt.savefig(fname, dpi=150)
     plt.close()
 
-    print(f"[Saved] {out_path}")
+    return fname
 
