@@ -125,6 +125,9 @@ def main(cfg: DictConfig):
         f"Test        | Loss {test_loss:.4f} | Recon {test_recon:.4f} | KL {test_kl:.4f}"
     )
 
+    # Simplex plot
+    from .simplex import plot_latent_simplex
+    plot_latent_simplex(model=model, loader=test_loader, device=device, model_type="dirichlet", save_dir="plots", model_name=cfg.model_name, n_samples=1000)
 
 if __name__ == "__main__":
     main()
