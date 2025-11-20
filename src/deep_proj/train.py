@@ -1,9 +1,10 @@
 # src/deep_proj/train.py
+import os
+import torch
+import wandb  # W&B
 import hydra
 from omegaconf import DictConfig, OmegaConf
-import torch
-import os
-import wandb  # W&B
+from hydra.utils import get_original_cwd
 
 from .data import get_dataloaders
 from .model import (
@@ -25,6 +26,39 @@ def get_device(cfg: DictConfig):
     return torch.device(cfg.device)
 
 
+def evaluate_split(model, loader, loss_fn, cfg, device):
+    """Compute avg loss, recon, KL on a given dataloader (no grad)."""
+    model.eval()
+    tot_loss = 0.0
+    tot_recon = 0.0
+    tot_kl = 0.0
+    n = 0
+
+    with torch.no_grad():
+        for xb, _ in loader:
+            xb = xb.to(device)
+
+            # undo normalization so inputs are ~[0,1] for Bernoulli likelihood
+            if cfg.dataset.lower() == "mnist":
+                xb = xb * 0.3081 + 0.1307
+            elif cfg.dataset.lower() == "medmnist":
+                xb = xb * 0.5 + 0.5
+
+            xb = xb.view(xb.size(0), -1)
+            loss, recon, kl = loss_fn(model, xb, reduction="mean")
+
+            bs = xb.size(0)
+            n += bs
+            tot_loss += loss.item() * bs
+            tot_recon += recon.item() * bs
+            tot_kl += kl.item() * bs
+
+    if n == 0:
+        return 0.0, 0.0, 0.0
+
+    return tot_loss / n, tot_recon / n, tot_kl / n
+
+
 @hydra.main(config_path="../../configs", config_name="base_config", version_base="1.3")
 def main(cfg: DictConfig):
     device = get_device(cfg)
@@ -32,7 +66,7 @@ def main(cfg: DictConfig):
 
     loaders = get_dataloaders(cfg)
     train_loader = loaders["train"]
-
+    val_loader = loaders["val"]
 
     # ----------------------------------------------------------
     # 1) Base hyperparams from Hydra (defaults or manual CLI)
@@ -47,6 +81,7 @@ def main(cfg: DictConfig):
 
     loaders = get_dataloaders(cfg)
     train_loader = loaders["train"]
+    val_loader = loaders["val"]
 
     # ----------------------------------------------------------
     # 2) Init W&B and override cfg from wandb.config (for sweeps)
@@ -69,7 +104,6 @@ def main(cfg: DictConfig):
         wcfg = wandb.config
         run_name = f"{wcfg.dataset}-{wcfg.model_name}-z{wcfg.latent_dim}-lr{wcfg.lr}"
         wandb.run.name = run_name
-        # optional: also tag the run
         wandb.run.tags = [str(wcfg.dataset), str(wcfg.model_name), f"z{wcfg.latent_dim}"]
 
         # overwrite cfg with sweep values if present
@@ -77,9 +111,8 @@ def main(cfg: DictConfig):
         cfg.latent_dim = int(getattr(wcfg, "latent_dim", base_latent_dim))
         cfg.lr = float(getattr(wcfg, "lr", base_lr))
         cfg.dataset = str(getattr(wcfg, "dataset", base_dataset))
-        # seed stays fixed from base_config (no sweep)
 
-        torch.manual_seed(cfg.seed)  # reapply (in case you later sweep it)
+        torch.manual_seed(cfg.seed)
 
     # ----------------------------------------------------------
     # 3) Use updated cfg.* for the rest of training
@@ -117,15 +150,53 @@ def main(cfg: DictConfig):
     if wandb_run is not None:
         wandb.watch(model, log="all", log_freq=100)
 
-    # Define lists to store training history
+    # ----------------------------------------------------------
+    # Checkpoint setup (project_root/models/)
+    # ----------------------------------------------------------
+    project_root = get_original_cwd()
+    ckpt_dir = os.path.join(project_root, "models")
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    best_val_loss = float("inf")
+    best_ckpt_path = None
+    last_val_loss = None
+
+    # training history
     train_loss_hist = []
     recon_hist = []
     kl_hist = []
+
+    val_loss_hist = []
+    val_recon_hist = []
+    val_kl_hist = []
 
     # path for plots
     plot_path = os.path.join("reports", "figures", cfg.model_name)
     os.makedirs(plot_path, exist_ok=True)
 
+    # ----------------------------------------------------------
+    # Plot epoch 0 (untrained model) once before training loop
+    # ----------------------------------------------------------
+    epoch0_img_path = plot_training_progress(
+        model,
+        train_loader.dataset,
+        epoch=0,
+        bottleneck=model_name,
+        device=device,
+        n_samples=10000,
+        save_path=plot_path,
+    )
+    if wandb_run is not None and epoch0_img_path is not None:
+        wandb.log(
+            {
+                "epoch": 0,
+                "plots/progress_epoch_000": wandb.Image(epoch0_img_path),
+            }
+        )
+
+    # ----------------------------------------------------------
+    # Training loop
+    # ----------------------------------------------------------
     for epoch in range(1, epochs + 1):
         model.train()
         tot_loss = 0.0
@@ -142,7 +213,7 @@ def main(cfg: DictConfig):
             elif cfg.dataset.lower() == "medmnist":
                 xb = xb * 0.5 + 0.5
 
-            xb = xb.view(xb.size(0), -1)  # flatten
+            xb = xb.view(xb.size(0), -1)
 
             optimizer.zero_grad()
             loss, recon, kl = loss_fn(model, xb, reduction="mean")
@@ -160,17 +231,46 @@ def main(cfg: DictConfig):
         avg_recon = tot_recon / n
         avg_kl = tot_kl / n
 
+        # --- validation pass ---
+        val_loss, val_recon, val_kl = evaluate_split(
+            model, val_loader, loss_fn, cfg, device
+        )
+        last_val_loss = val_loss
+
         print(
             f"Epoch {epoch:02d} {tag} | "
-            f"Loss {avg_loss:.4f} | "
-            f"Recon {avg_recon:.4f} | "
-            f"KL {avg_kl:.4f}"
+            f"Train Loss {avg_loss:.4f} | Recon {avg_recon:.4f} | KL {avg_kl:.4f} | "
+            f"Val Loss {val_loss:.4f} | Val Recon {val_recon:.4f} | Val KL {val_kl:.4f}"
         )
 
-        # Store average losses for this epoch
+        # history
         train_loss_hist.append(avg_loss)
         recon_hist.append(avg_recon)
         kl_hist.append(avg_kl)
+        val_loss_hist.append(val_loss)
+        val_recon_hist.append(val_recon)
+        val_kl_hist.append(val_kl)
+
+        # ------------------------------------------------------
+        # Checkpoint: save best model w.r.t validation loss
+        # ------------------------------------------------------
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            ckpt_name = (
+                f"{cfg.dataset}_{cfg.model_name}_z{latent_dim}_lr{learning_rate}_best.pt"
+            )
+            best_ckpt_path = os.path.join(ckpt_dir, ckpt_name)
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "val_loss": best_val_loss,
+                    "config": OmegaConf.to_container(cfg, resolve=True),
+                },
+                best_ckpt_path,
+            )
+            print(f"Saved new best checkpoint to: {best_ckpt_path}")
 
         # W&B: log scalars
         if wandb_run is not None:
@@ -180,6 +280,9 @@ def main(cfg: DictConfig):
                     "train/loss": avg_loss,
                     "train/recon": avg_recon,
                     "train/kl": avg_kl,
+                    "val/loss": val_loss,
+                    "val/recon": val_recon,
+                    "val/kl": val_kl,
                 }
             )
 
@@ -194,15 +297,37 @@ def main(cfg: DictConfig):
                 n_samples=10000,
                 save_path=plot_path,
             )
-            # W&B: log the image
             if wandb_run is not None and img_path is not None:
                 wandb.log({f"plots/progress_epoch_{epoch:03d}": wandb.Image(img_path)})
 
-    # Visualize final results
+    # ----------------------------------------------------------
+    # Save final ("last") checkpoint
+    # ----------------------------------------------------------
+    last_ckpt_name = (
+        f"{cfg.dataset}_{cfg.model_name}_z{latent_dim}_lr{learning_rate}_last.pt"
+    )
+    last_ckpt_path = os.path.join(ckpt_dir, last_ckpt_name)
+    torch.save(
+        {
+            "epoch": epochs,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "val_loss": last_val_loss,
+            "config": OmegaConf.to_container(cfg, resolve=True),
+        },
+        last_ckpt_path,
+    )
+    print(f"Saved final checkpoint to: {last_ckpt_path}")
+
+    # Visualize final results (still using training logs only)
     training_logs = {
         "loss": train_loss_hist,
         "recon": recon_hist,
         "kl": kl_hist,
+        # later add val_* in visualize,
+        # "val_loss": val_loss_hist,
+        # "val_recon": val_recon_hist,
+        # "val_kl": val_kl_hist,
     }
 
     final_proj_path, final_recon_path = plot_final_results(
