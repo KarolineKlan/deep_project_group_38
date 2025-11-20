@@ -17,6 +17,7 @@ from .visualize import (
     plot_training_progress,
     plot_final_results,
     plot_dirichlet_simplex_nD,
+    visualize_model,
 )
 
 
@@ -288,15 +289,9 @@ def main(cfg: DictConfig):
 
         # Optional: plot every viz_every epochs
         if epoch % cfg.viz_every == 0 or epoch == epochs:
-            img_path = plot_training_progress(
-                model,
-                train_loader.dataset,
-                epoch,
-                bottleneck=model_name,
-                device=device,
-                n_samples=10000,
-                save_path=plot_path,
-            )
+            img_path=visualize_model(model, epoch, train_loader, device, plot_path,
+                    cfg.model_name, n_samples=8, tsne_samples=1000)
+            # W&B: log the image
             if wandb_run is not None and img_path is not None:
                 wandb.log({f"plots/progress_epoch_{epoch:03d}": wandb.Image(img_path)})
 

@@ -322,3 +322,107 @@ def _get_latents_and_recons(model, dataset, device, n_samples=5000):
         recon = torch.sigmoid(logits).cpu()
 
     return z, labels, xb_vis.cpu(), recon
+
+
+def visualize_model(model, epoch, loader, device, save_dir,
+                    model_name="Model", n_samples=8, tsne_samples=1000):
+
+    os.makedirs(save_dir, exist_ok=True)
+    model.eval()
+
+    # -----------------------------
+    # Get batch for reconstructions
+    # -----------------------------
+    xb, yb = next(iter(loader))
+    xb = xb.to(device).view(xb.size(0), -1)
+
+    with torch.no_grad():
+        if model_name == "dirichlet":
+            logits, z, _, _ = model(xb)
+        elif model_name == "gaussian":
+            logits, mu, logvar, z = model(xb)
+        else:
+            raise ValueError("Invalid model_name")
+
+        recon = torch.sigmoid(logits)
+
+    xb_np = xb.cpu().numpy()
+    recon_np = recon.cpu().numpy()
+
+    # Remove NaNs
+    mask = ~np.isnan(recon_np).any(axis=1)
+    xb_np = xb_np[mask]
+    recon_np = recon_np[mask]
+
+    # -----------------------------
+    # Collect latent samples for t-SNE
+    # -----------------------------
+    z_all, y_all = [], []
+
+    with torch.no_grad():
+        for xb2, yb2 in loader:
+            xb2 = xb2.to(device).view(xb2.size(0), -1)
+
+            if model_name == "dirichlet":
+                _, z2, _, _ = model(xb2)
+            else:
+                _, mu2, logvar2, z2 = model(xb2)
+
+            z_all.append(z2.cpu())
+            y_all.append(yb2)
+
+            if sum(len(t) for t in z_all) >= tsne_samples:
+                break
+
+    z_all = torch.cat(z_all, dim=0)[:tsne_samples].numpy()
+    y_all = torch.cat(y_all, dim=0)[:tsne_samples].numpy()
+
+    # Remove NaNs in z_all
+    mask = ~np.isnan(z_all).any(axis=1)
+    z_all = z_all[mask]
+    y_all = y_all[mask]
+
+    # Compute t-SNE
+    tsne = TSNE(n_components=2, perplexity=30, random_state=42)
+    z_2d = tsne.fit_transform(z_all)
+
+    # =====================================================================
+    # ---------------------- SIDE-BY-SIDE PLOTTING -------------------------
+    # =====================================================================
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # ----- LEFT: Reconstructions -----
+    xb_t = torch.from_numpy(xb_np).float()
+    recon_t = torch.from_numpy(recon_np).float()
+
+    # Only keep the first n_samples to avoid huge grids
+    xb_t = xb_t[:n_samples]
+    recon_t = recon_t[:n_samples]
+
+# Concatenate originals + recons
+
+    grid = torch.cat([xb_t, recon_t])
+    grid = vutils.make_grid(grid.view(-1, 1, 28, 28), nrow=8, pad_value=1)
+    axes[1].imshow(grid.permute(1, 2, 0))
+    axes[1].axis("off")
+    axes[1].set_title(f"{model_name.upper()} Reconstructions (Epoch {epoch})")
+
+    # ----- RIGHT: t-SNE -----
+    sc = axes[0].scatter(z_2d[:, 0], z_2d[:, 1], c=y_all,
+                         cmap="tab10", s=10, alpha=0.7)
+    axes[0].set_title(f"{model_name.upper()} Latent Space (t-SNE) (Epoch {epoch})")
+    axes[0].set_xticks([])
+    axes[0].set_yticks([])
+    fig.colorbar(sc, ax=axes[0])
+
+    fname = None
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        fname = os.path.join(
+            save_dir, f"{model_name}_progress_epoch_{epoch:03d}.png"
+        )
+        plt.savefig(fname, dpi=150)
+    plt.close()
+
+    return fname
+
