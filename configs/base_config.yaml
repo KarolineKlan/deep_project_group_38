@@ -3,7 +3,7 @@
 # or without wandb: python -m src.deep_proj.train wandb.enabled=false
 wandb:
   enabled: true          # turn off with wandb.enabled=false
-  project: deep_vae_karo # CHANGE THIS BEFORE RUNNING
+  project: deep_vae_olli # CHANGE THIS BEFORE RUNNING
   entity: spicy-mlops    # <- W&B team slug
   group: ${model_name}   # group runs by bottleneck type
   mode: online           # or "offline" / "disabled"
@@ -21,7 +21,8 @@ val_split: 0.1
 medmnist_subset: pathmnist  # only used if dataset=medmnist
 
 # model (one at a time)
-model_name: gaussian        # gaussian | dirichlet | cc
+model_name: dirichlet
+        # gaussian | dirichlet | cc
 latent_dim: 50
 recon_loss: bce
 alpha_init: 0.98            # dirichlet
@@ -29,12 +30,12 @@ cc_components: 10           # cc
 cc_temperature: 1.0         # cc
 
 # trainer
-epochs: 5
+epochs: 3
 lr: 5e-4
 device: auto            # "cuda" | "cpu" | "auto"
 
 # visualization
-viz_every: 2      # or 1 if you want plots every epoch
+viz_every: 1      # or 1 if you want plots every epoch
 
 # checkpoint saving and loading
 checkpoint_name: "${dataset}_${model_name}_z${latent_dim}_lr${lr}_best.pt"
