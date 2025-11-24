@@ -7,7 +7,7 @@
 # Usage (from project root):
 #   python -m src.deep_proj.evaluate --checkpoint models/mnist_dirichlet_z10_lr0.0005_best.pt
 #
-# or, if you prefer, just the filename:
+# or, just the filename:
 #   python -m src.deep_proj.evaluate --checkpoint mnist_dirichlet_z10_lr0.0005_best.pt
 
 import os
@@ -188,7 +188,8 @@ def main():
         device=device,
         save_dir=eval_dir,
         model_name=cfg.model_name.lower(),
-        tsne_samples=2000,
+        dataset_name=cfg.dataset,
+        tsne_samples=3000,
         eval=True,
     )
     print("Saved t-SNE latent plot:", latent_path)
@@ -200,6 +201,7 @@ def main():
         device=device,
         save_dir=eval_dir,
         model_name=cfg.model_name.lower(),
+        dataset_name=cfg.dataset,
         n_samples=10,
         eval=True,
     )
