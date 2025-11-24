@@ -13,7 +13,7 @@ from sklearn.decomposition import PCA
 import matplotlib.image as mpimg
 
 def plot_latent(model, epoch, loader, device, save_dir,
-                    model_name, tsne_samples=1000,eval=False):
+                    model_name, dataset_name, tsne_samples=1000,eval=False):
     
     os.makedirs(save_dir, exist_ok=True)
     model.eval()
@@ -25,19 +25,24 @@ def plot_latent(model, epoch, loader, device, save_dir,
 
     with torch.no_grad():
         for xb2, yb2 in loader:
-            xb2 = xb2.to(device).view(xb2.size(0), -1)
+            xb2 = xb2.to(device)
 
-            # only denormalize for evaluation plots
-            if eval: 
-                if model_name == "mnist":
-                    xb2 = xb2 * 0.3081 + 0.1307
-                elif model_name == "medmnist":
-                    xb2 = xb2 * 0.5 + 0.5
+            # undo normalization just like in training
+            if dataset_name.lower() == "mnist":
+                xb2 = xb2 * 0.3081 + 0.1307
+            elif dataset_name.lower() == "medmnist":
+                xb2 = xb2 * 0.5 + 0.5
+
+            xb2 = xb2.view(xb2.size(0), -1)
 
             if model_name == "dirichlet":
                 _, z2, _, _ = model(xb2)
-            else:
+            elif model_name == "gaussian":
                 _, mu2, logvar2, z2 = model(xb2)
+            elif model_name == "cc":
+                _, z2, _, _ = model(xb2)  # CHANGE THIS WHEN CC IS IMPLEMENTED
+            else:
+                raise ValueError("Invalid bottleneck_name")
 
             z_all.append(z2.cpu())
             y_all.append(yb2)
@@ -86,25 +91,28 @@ def plot_latent(model, epoch, loader, device, save_dir,
     return fname
 
 def plot_recons(model, epoch, loader, device, save_dir,
-                    model_name, n_samples=8, eval=False): 
+                    model_name,dataset_name, n_samples=8, eval=False): 
     
     os.makedirs(save_dir, exist_ok=True)
     model.eval()
     xb, yb = next(iter(loader))
-    xb = xb.to(device).view(xb.size(0), -1)
+    xb = xb.to(device)
 
-    #  only denormalize for evaluation plots
-    if eval:
-        if model_name == "mnist":
-            xb = xb * 0.3081 + 0.1307
-        elif model_name == "medmnist":
-            xb = xb * 0.5 + 0.5
+    # --- undo normalization exactly like in training ---
+    if dataset_name.lower() == "mnist":
+        xb = xb * 0.3081 + 0.1307
+    elif dataset_name.lower() == "medmnist":
+        xb = xb * 0.5 + 0.5
     
+    xb = xb.view(xb.size(0), -1)
+
     with torch.no_grad():
         if model_name == "dirichlet":
             logits, z, _, _ = model(xb)
         elif model_name == "gaussian":
             logits, mu, logvar, z = model(xb)
+        elif model_name == "cc":
+            _, z2, _, _ = model(xb)  # CHANGE THIS WHEN CC IS IMPLEMENTED
         else:
             raise ValueError("Invalid model_name")
 
@@ -127,7 +135,7 @@ def plot_recons(model, epoch, loader, device, save_dir,
     recon_t = recon_t[:n_samples]
 
 
-    grid = torch.cat([xb_t, recon_t], dim=0).view(2, n_samples, 1, 28, 28) #torch.cat([xb_t, recon_t])
+    grid = torch.cat([xb_t, recon_t])
     grid = vutils.make_grid(grid.view(-1, 1, 28, 28), nrow=n_samples, pad_value=1)
     
     fig = plt.figure(figsize=(8, 4))

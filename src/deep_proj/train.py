@@ -16,7 +16,7 @@ from .model import (
 from .visualize import (
     plot_training_progress,
     plot_training_loss,
-    plot_recons, 
+    plot_recons,
     plot_latent,
     plot_side_by_side,
 )
@@ -59,6 +59,41 @@ def evaluate_split(model, loader, loss_fn, cfg, device):
         return 0.0, 0.0, 0.0
 
     return tot_loss / n, tot_recon / n, tot_kl / n
+
+
+class EarlyStopping:
+    """
+    Simple early stopping utility.
+
+    Stops training when validation loss has not improved by at least
+    `min_delta` for `patience` consecutive epochs.
+    """
+
+    def __init__(self, patience=10, min_delta=0.0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.best = float("inf")
+        self.counter = 0
+        self.should_stop = False
+
+    def step(self, val_loss: float) -> bool:
+        """
+        Update early stopping state with a new validation loss.
+
+        Returns
+        -------
+        improved : bool
+            True if val_loss improved enough to reset the counter, False otherwise.
+        """
+        if val_loss < self.best - self.min_delta:
+            self.best = val_loss
+            self.counter = 0
+            return True
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.should_stop = True
+            return False
 
 
 @hydra.main(config_path="../../configs", config_name="base_config", version_base="1.3")
@@ -163,6 +198,12 @@ def main(cfg: DictConfig):
     best_ckpt_path = None
     last_val_loss = None
 
+    # Early stopping setup (values from Hydra config)
+    early_stopper = EarlyStopping(
+        patience=getattr(cfg, "early_stop_patience", 10),
+        min_delta=getattr(cfg, "early_stop_min_delta", 0.0),
+    )
+
     # training history
     train_loss_hist = []
     recon_hist = []
@@ -178,17 +219,15 @@ def main(cfg: DictConfig):
     plot_path = os.path.join(plot_root, "training")
     os.makedirs(plot_path, exist_ok=True)
 
-
     # ----------------------------------------------------------
     # Plot epoch 0 (untrained model) once before training loop
     # ----------------------------------------------------------
+    recon_0 = plot_recons(model,0,train_loader,device,os.path.join(plot_path, "recons_alone"),cfg.model_name,cfg.dataset,n_samples=8,eval=False,
+    )
+    latent_0 = plot_latent(model,0,train_loader,device,os.path.join(plot_path, "latents_alone"),cfg.model_name,cfg.dataset,tsne_samples=1000,eval=False,
+    )
+    epoch0_img_path = plot_side_by_side(latent_0, recon_0, plot_path, model_name, 0)
 
-    recon_0=plot_recons(model, 0, train_loader, device, os.path.join(plot_path, "recons_alone"),
-                    cfg.model_name, n_samples=8, eval=False)
-    latent_0=plot_latent(model, 0, train_loader, device, os.path.join(plot_path, "latents_alone"),
-                    cfg.model_name, tsne_samples=1000, eval=False)
-    epoch0_img_path=plot_side_by_side(latent_0, recon_0, plot_path, model_name, 0)
-    
     if wandb_run is not None and epoch0_img_path is not None:
         wandb.log(
             {
@@ -259,9 +298,7 @@ def main(cfg: DictConfig):
         # ------------------------------------------------------
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            ckpt_name = (
-                f"{run_id}_best.pt"
-            )
+            ckpt_name = f"{run_id}_best.pt"
             best_ckpt_path = os.path.join(ckpt_dir, ckpt_name)
             torch.save(
                 {
@@ -291,29 +328,47 @@ def main(cfg: DictConfig):
 
         # Plot viz_every epochs
         if epoch % cfg.viz_every == 0 or epoch == epochs:
-            recon=plot_recons(model, epoch, train_loader, device, os.path.join(plot_path, "recons_alone"),
-                    cfg.model_name, n_samples=8, eval=False)
-            latent=plot_latent(model, epoch, train_loader, device, os.path.join(plot_path, "latents_alone"),
-                    cfg.model_name, tsne_samples=1000, eval=False)
-            img_path=plot_side_by_side(latent, recon, plot_path, model_name, epoch)
+            recon = plot_recons(model,epoch,train_loader,device,os.path.join(plot_path, "recons_alone"),cfg.model_name,cfg.dataset,n_samples=8,eval=False,
+            )
+            latent = plot_latent(model,epoch,train_loader,device,os.path.join(plot_path, "latents_alone"),cfg.model_name,cfg.dataset,tsne_samples=1000,eval=False,
+            )
+            img_path = plot_side_by_side(latent, recon, plot_path, model_name, epoch)
 
-            
             # W&B: log the image
             if wandb_run is not None and img_path is not None:
                 wandb.log({f"plots/progress_epoch_{epoch:03d}": wandb.Image(img_path)})
 
+        # ------------------------------------------------------
+        # Early stopping check (with prints)
+        # ------------------------------------------------------
+        improved = early_stopper.step(val_loss)
+        if improved:
+            print(
+                f"Validation improved. Early stopping counter reset "
+                f"(best_val_loss={early_stopper.best:.4f})."
+            )
+        else:
+            print(
+                f"No val improvement. Early stop counter: "
+                f"{early_stopper.counter}/{early_stopper.patience}"
+            )
+
+        if early_stopper.should_stop:
+            print(
+                f"Early stopping triggered at epoch {epoch}. "
+                f"No val loss improvement for {early_stopper.patience} consecutive epochs."
+            )
+            break
+
     # ----------------------------------------------------------
     # Save final ("last") checkpoint
     # ----------------------------------------------------------
-    last_ckpt_name = (
-        f"{run_id}_last.pt"
-    )
+    last_ckpt_name = f"{run_id}_last.pt"
     last_ckpt_path = os.path.join(ckpt_dir, last_ckpt_name)
     torch.save(
         {
-            "epoch": epochs,
+            "epoch": epoch,  # last epoch actually run (honors early stopping)
             "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
             "val_loss": last_val_loss,
             "config": OmegaConf.to_container(cfg, resolve=True),
         },
@@ -330,8 +385,7 @@ def main(cfg: DictConfig):
         "val_recon": val_recon_hist,
         "val_kl": val_kl_hist,
     }
-    loss_curve_path=plot_training_loss(training_logs,model_name, plot_path,device)
-
+    loss_curve_path = plot_training_loss(training_logs, model_name, plot_path, device)
 
     # W&B: log final figures
     if wandb_run is not None:
