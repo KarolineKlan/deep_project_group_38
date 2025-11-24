@@ -53,8 +53,8 @@ def plot_latent_simplex(model, loader, device, model_type="gaussian", n_samples=
     z_all = z_all / (z_all.sum(dim=1, keepdim=True) + 1e-8)
     z_np = z_all.numpy()
 
-    print(z_np.shape)
-    print(z_np[:5])
+    #print(z_np.shape)
+    #print(z_np[:5])
 
     # Compute mask BEFORE filtering
     mask = ~np.isnan(z_np).any(axis=1)
@@ -64,8 +64,8 @@ def plot_latent_simplex(model, loader, device, model_type="gaussian", n_samples=
     y_all = y_all[mask]
     idx_all = idx_all[mask]
 
-    print(z_np.shape)
-    print(z_np[:5])
+    #print(z_np.shape)
+    #print(z_np[:5])
 
     latent_dim = z_np.shape[1]
     vertices = get_polygon_vertices(latent_dim)
