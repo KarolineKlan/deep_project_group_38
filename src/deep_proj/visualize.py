@@ -27,6 +27,13 @@ def plot_latent(model, epoch, loader, device, save_dir,
         for xb2, yb2 in loader:
             xb2 = xb2.to(device).view(xb2.size(0), -1)
 
+            # only denormalize for evaluation plots
+            if eval: 
+                if model_name == "mnist":
+                    xb2 = xb2 * 0.3081 + 0.1307
+                elif model_name == "medmnist":
+                    xb2 = xb2 * 0.5 + 0.5
+
             if model_name == "dirichlet":
                 _, z2, _, _ = model(xb2)
             else:
@@ -85,6 +92,13 @@ def plot_recons(model, epoch, loader, device, save_dir,
     model.eval()
     xb, yb = next(iter(loader))
     xb = xb.to(device).view(xb.size(0), -1)
+
+    #  only denormalize for evaluation plots
+    if eval:
+        if model_name == "mnist":
+            xb = xb * 0.3081 + 0.1307
+        elif model_name == "medmnist":
+            xb = xb * 0.5 + 0.5
     
     with torch.no_grad():
         if model_name == "dirichlet":
@@ -113,8 +127,8 @@ def plot_recons(model, epoch, loader, device, save_dir,
     recon_t = recon_t[:n_samples]
 
 
-    grid = torch.cat([xb_t, recon_t])
-    grid = vutils.make_grid(grid.view(-1, 1, 28, 28), nrow=8, pad_value=1)
+    grid = torch.cat([xb_t, recon_t], dim=0).view(2, n_samples, 1, 28, 28) #torch.cat([xb_t, recon_t])
+    grid = vutils.make_grid(grid.view(-1, 1, 28, 28), nrow=n_samples, pad_value=1)
     
     fig = plt.figure(figsize=(8, 4))
     plt.imshow(grid.permute(1, 2, 0))
@@ -308,100 +322,100 @@ def plot_training_loss(training_logs,bottleneck, save_path,device=None):
 
 
 
-def plot_final_results(
-    model, dataset, training_logs, bottleneck, device=None, n_samples=10000, save_path=None
-):  
+# def plot_final_results(
+#     model, dataset, training_logs, bottleneck, device=None, n_samples=10000, save_path=None
+# ):  
 
 
 
-    """
-    Plot:
-      - training curves
-      - latent projections (t-SNE, UMAP, MDS)
-      - final reconstructions
+#     """
+#     Plot:
+#       - training curves
+#       - latent projections (t-SNE, UMAP, MDS)
+#       - final reconstructions
 
-    Returns:
-      (projections_figure_path, reconstructions_figure_path)
-      where each can be None if save_path is None.
-    """
-    device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    z, labels, xb, recon = _get_latents_and_recons(
-        model, dataset, device, n_samples=n_samples
-    )
+#     Returns:
+#       (projections_figure_path, reconstructions_figure_path)
+#       where each can be None if save_path is None.
+#     """
+#     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     z, labels, xb, recon = _get_latents_and_recons(
+#         model, dataset, device, n_samples=n_samples
+#     )
 
-    # NaN-safe latents for embeddings
-    z_np, labels_np = _sanitize_latents(z, labels, what="final embeddings")
-    if z_np is None:
-        print(
-            "[WARN] plot_final_results: skipping latent projections due to insufficient valid points."
-        )
-        z2d_tsne = z2d_umap = z2d_mds = None
-    else:
-        print("Computing embeddings: t-SNE, UMAP, MDS...")
-        z2d_tsne = TSNE(
-            n_components=2, init="pca", perplexity=30, learning_rate="auto"
-        ).fit_transform(z_np)
-        z2d_umap = umap.UMAP(n_neighbors=30, min_dist=0.2).fit_transform(z_np)
-        z2d_mds = MDS(n_components=2).fit_transform(z_np)
+#     # NaN-safe latents for embeddings
+#     z_np, labels_np = _sanitize_latents(z, labels, what="final embeddings")
+#     if z_np is None:
+#         print(
+#             "[WARN] plot_final_results: skipping latent projections due to insufficient valid points."
+#         )
+#         z2d_tsne = z2d_umap = z2d_mds = None
+#     else:
+#         print("Computing embeddings: t-SNE, UMAP, MDS...")
+#         z2d_tsne = TSNE(
+#             n_components=2, init="pca", perplexity=30, learning_rate="auto"
+#         ).fit_transform(z_np)
+#         z2d_umap = umap.UMAP(n_neighbors=30, min_dist=0.2).fit_transform(z_np)
+#         z2d_mds = MDS(n_components=2).fit_transform(z_np)
 
-    # Training curves + latent projections
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+#     # Training curves + latent projections
+#     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-    ax_curve = axes[0, 0]
-    ax_curve.plot(training_logs["loss"], label="Total loss")
-    ax_curve.plot(training_logs["recon"], label="Reconstruction")
-    ax_curve.plot(training_logs["kl"], label="KL")
-    ax_curve.set_title(f"Training curves for {bottleneck.upper()}")
-    ax_curve.set_xlabel("Epoch")
-    ax_curve.set_ylabel("Loss")
-    ax_curve.legend()
+#     ax_curve = axes[0, 0]
+#     ax_curve.plot(training_logs["loss"], label="Total loss")
+#     ax_curve.plot(training_logs["recon"], label="Reconstruction")
+#     ax_curve.plot(training_logs["kl"], label="KL")
+#     ax_curve.set_title(f"Training curves for {bottleneck.upper()}")
+#     ax_curve.set_xlabel("Epoch")
+#     ax_curve.set_ylabel("Loss")
+#     ax_curve.legend()
 
-    def scatter_latent(ax, emb, title):
-        if emb is None:
-            ax.set_title(title + " (skipped)")
-            ax.set_xticks([])
-            ax.set_yticks([])
-            return None
-        sc = ax.scatter(
-            emb[:, 0], emb[:, 1], c=labels_np, cmap="tab10", s=5, alpha=0.7
-        )
-        ax.set_title(title)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        return sc
+#     def scatter_latent(ax, emb, title):
+#         if emb is None:
+#             ax.set_title(title + " (skipped)")
+#             ax.set_xticks([])
+#             ax.set_yticks([])
+#             return None
+#         sc = ax.scatter(
+#             emb[:, 0], emb[:, 1], c=labels_np, cmap="tab10", s=5, alpha=0.7
+#         )
+#         ax.set_title(title)
+#         ax.set_xticks([])
+#         ax.set_yticks([])
+#         return sc
 
-    scatter_latent(axes[0, 1], z2d_tsne, f"{bottleneck.upper()} t-SNE projection")
-    scatter_latent(axes[1, 0], z2d_umap, f"{bottleneck.upper()} UMAP projection")
-    scatter_latent(axes[1, 1], z2d_mds, f"{bottleneck.upper()} MDS projection")
+#     scatter_latent(axes[0, 1], z2d_tsne, f"{bottleneck.upper()} t-SNE projection")
+#     scatter_latent(axes[1, 0], z2d_umap, f"{bottleneck.upper()} UMAP projection")
+#     scatter_latent(axes[1, 1], z2d_mds, f"{bottleneck.upper()} MDS projection")
 
-    plt.tight_layout()
+#     plt.tight_layout()
 
-    proj_fname = None
-    if save_path:
-        os.makedirs(save_path, exist_ok=True)
-        proj_fname = os.path.join(save_path, f"{bottleneck}_final_projections.png")
-        plt.savefig(proj_fname, dpi=150)
-    plt.close()
+#     proj_fname = None
+#     if save_path:
+#         os.makedirs(save_path, exist_ok=True)
+#         proj_fname = os.path.join(save_path, f"{bottleneck}_final_projections.png")
+#         plt.savefig(proj_fname, dpi=150)
+#     plt.close()
 
-    # Reconstructions
-    grid = torch.cat([xb, recon])
-    grid = vutils.make_grid(grid.view(-1, 1, 28, 28), nrow=8, pad_value=1)
-    img = grid.permute(1, 2, 0).cpu().numpy()
+#     # Reconstructions
+#     grid = torch.cat([xb, recon])
+#     grid = vutils.make_grid(grid.view(-1, 1, 28, 28), nrow=8, pad_value=1)
+#     img = grid.permute(1, 2, 0).cpu().numpy()
 
-    plt.figure(figsize=(10, 4))
-    if img.shape[-1] == 1:
-        plt.imshow(img[..., 0], cmap="gray")
-    else:
-        plt.imshow(img)
-    plt.axis("off")
-    plt.title(f"{bottleneck.upper()}: Final reconstructions")
-    plt.tight_layout()
+#     plt.figure(figsize=(10, 4))
+#     if img.shape[-1] == 1:
+#         plt.imshow(img[..., 0], cmap="gray")
+#     else:
+#         plt.imshow(img)
+#     plt.axis("off")
+#     plt.title(f"{bottleneck.upper()}: Final reconstructions")
+#     plt.tight_layout()
 
-    recon_fname = None
-    if save_path:
-        os.makedirs(save_path, exist_ok=True)
-        recon_fname = os.path.join(save_path, f"{bottleneck}_final_recons.png")
-        plt.savefig(recon_fname, dpi=150)
-    plt.close()
+#     recon_fname = None
+#     if save_path:
+#         os.makedirs(save_path, exist_ok=True)
+#         recon_fname = os.path.join(save_path, f"{bottleneck}_final_recons.png")
+#         plt.savefig(recon_fname, dpi=150)
+#     plt.close()
 
-    return proj_fname, recon_fname
+#     return proj_fname, recon_fname

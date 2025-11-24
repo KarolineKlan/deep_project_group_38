@@ -12,13 +12,13 @@ method: grid
 
 parameters:
   dataset:
-    values: ["mnist"]   #, "medmnist"]
+    values: ["mnist", "medmnist"]
   model_name:
     values: ["dirichlet", "gaussian"]    #, "cc"]
   lr:
     values: [5e-4]   #, 0.001, 0.003]
   latent_dim:
-    values: [10, 50]  #, 50]
+    values: [10] #, 50]  #, 50]
 
 
 command:

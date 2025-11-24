@@ -64,14 +64,8 @@ def evaluate_split(model, loader, loss_fn, cfg, device):
 @hydra.main(config_path="../../configs", config_name="base_config", version_base="1.3")
 def main(cfg: DictConfig):
     device = get_device(cfg)
-    torch.manual_seed(cfg.seed)
-
-    loaders = get_dataloaders(cfg)
-    train_loader = loaders["train"]
-    val_loader = loaders["val"]
-
     # ----------------------------------------------------------
-    # 1) Base hyperparams from Hydra (defaults or manual CLI)
+    # 1) Base hyperparams from Hydra (used when not using W&B sweeps)
     # ----------------------------------------------------------
     base_model_name = cfg.model_name
     base_latent_dim = cfg.latent_dim
@@ -80,10 +74,6 @@ def main(cfg: DictConfig):
     base_seed = cfg.seed
 
     torch.manual_seed(base_seed)
-
-    loaders = get_dataloaders(cfg)
-    train_loader = loaders["train"]
-    val_loader = loaders["val"]
 
     # ----------------------------------------------------------
     # 2) Init W&B and override cfg from wandb.config (for sweeps)
@@ -104,7 +94,9 @@ def main(cfg: DictConfig):
             },
         )
         wcfg = wandb.config
-        run_name = f"{wcfg.dataset}-{wcfg.model_name}-z{wcfg.latent_dim}-lr{wcfg.lr}"
+
+        # nice human-readable run name
+        run_name = f"{wcfg.dataset}_{wcfg.model_name}_z{wcfg.latent_dim}_lr{wcfg.lr}"
         wandb.run.name = run_name
         wandb.run.tags = [str(wcfg.dataset), str(wcfg.model_name), f"z{wcfg.latent_dim}"]
 
@@ -113,11 +105,19 @@ def main(cfg: DictConfig):
         cfg.latent_dim = int(getattr(wcfg, "latent_dim", base_latent_dim))
         cfg.lr = float(getattr(wcfg, "lr", base_lr))
         cfg.dataset = str(getattr(wcfg, "dataset", base_dataset))
+        cfg.seed = int(getattr(wcfg, "seed", base_seed))
 
         torch.manual_seed(cfg.seed)
 
     # ----------------------------------------------------------
-    # 3) Use updated cfg.* for the rest of training
+    # 3) Build dataloaders *after* cfg has sweep overrides
+    # ----------------------------------------------------------
+    loaders = get_dataloaders(cfg)
+    train_loader = loaders["train"]
+    val_loader = loaders["val"]
+
+    # ----------------------------------------------------------
+    # 4) Use updated cfg.* for the rest of training
     # ----------------------------------------------------------
     input_dim = 28 * 28
     latent_dim = cfg.latent_dim
@@ -172,17 +172,20 @@ def main(cfg: DictConfig):
     val_recon_hist = []
     val_kl_hist = []
 
-    # path for plots
-    plot_path = os.path.join("reports", "figures", cfg.model_name)
+    run_id = f"{cfg.dataset}_{cfg.model_name}_z{latent_dim}_lr{learning_rate}"
+
+    plot_root = os.path.join("reports", "figures", run_id)
+    plot_path = os.path.join(plot_root, "training")
     os.makedirs(plot_path, exist_ok=True)
+
 
     # ----------------------------------------------------------
     # Plot epoch 0 (untrained model) once before training loop
     # ----------------------------------------------------------
 
-    recon_0=plot_recons(model, 0, train_loader, device, plot_path,
+    recon_0=plot_recons(model, 0, train_loader, device, os.path.join(plot_path, "recons_alone"),
                     cfg.model_name, n_samples=8, eval=False)
-    latent_0=plot_latent(model, 0, train_loader, device, plot_path,
+    latent_0=plot_latent(model, 0, train_loader, device, os.path.join(plot_path, "latents_alone"),
                     cfg.model_name, tsne_samples=1000, eval=False)
     epoch0_img_path=plot_side_by_side(latent_0, recon_0, plot_path, model_name, 0)
     
@@ -257,7 +260,7 @@ def main(cfg: DictConfig):
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             ckpt_name = (
-                f"{cfg.dataset}_{cfg.model_name}_z{latent_dim}_lr{learning_rate}_best.pt"
+                f"{run_id}_best.pt"
             )
             best_ckpt_path = os.path.join(ckpt_dir, ckpt_name)
             torch.save(
@@ -286,15 +289,14 @@ def main(cfg: DictConfig):
                 }
             )
 
-        # Optional: plot every viz_every epochs
+        # Plot viz_every epochs
         if epoch % cfg.viz_every == 0 or epoch == epochs:
-            recon=plot_recons(model, epoch, train_loader, device, plot_path,
+            recon=plot_recons(model, epoch, train_loader, device, os.path.join(plot_path, "recons_alone"),
                     cfg.model_name, n_samples=8, eval=False)
-            latent=plot_latent(model, epoch, train_loader, device, plot_path,
+            latent=plot_latent(model, epoch, train_loader, device, os.path.join(plot_path, "latents_alone"),
                     cfg.model_name, tsne_samples=1000, eval=False)
             img_path=plot_side_by_side(latent, recon, plot_path, model_name, epoch)
-            #img_path=plot_training_progress(model, epoch, train_loader, device, plot_path,
-                    #cfg.model_name, n_samples=8, tsne_samples=1000)
+
             
             # W&B: log the image
             if wandb_run is not None and img_path is not None:
@@ -304,7 +306,7 @@ def main(cfg: DictConfig):
     # Save final ("last") checkpoint
     # ----------------------------------------------------------
     last_ckpt_name = (
-        f"{cfg.dataset}_{cfg.model_name}_z{latent_dim}_lr{learning_rate}_last.pt"
+        f"{run_id}_last.pt"
     )
     last_ckpt_path = os.path.join(ckpt_dir, last_ckpt_name)
     torch.save(
@@ -324,10 +326,9 @@ def main(cfg: DictConfig):
         "loss": train_loss_hist,
         "recon": recon_hist,
         "kl": kl_hist,
-        # later add val_* in visualize,
-         "val_loss": val_loss_hist,
-         "val_recon": val_recon_hist,
-         "val_kl": val_kl_hist,
+        "val_loss": val_loss_hist,
+        "val_recon": val_recon_hist,
+        "val_kl": val_kl_hist,
     }
     loss_curve_path=plot_training_loss(training_logs,model_name, plot_path,device)
 
@@ -335,7 +336,7 @@ def main(cfg: DictConfig):
     # W&B: log final figures
     if wandb_run is not None:
         if loss_curve_path is not None:
-            wandb.log({"plots/final_projections": wandb.Image(loss_curve_path)})
+            wandb.log({"plots/final_losscurve": wandb.Image(loss_curve_path)})
         wandb_run.finish()
 
 
