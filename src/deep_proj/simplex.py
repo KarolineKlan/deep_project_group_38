@@ -26,7 +26,7 @@ def plot_latent_simplex(model, loader, device, model_type="gaussian", n_samples=
             xb_flat = xb.to(device).view(xb.size(0), -1)
 
             if model_type.lower() == "dirichlet":
-                _, z, _, _ = model(xb_flat)
+                _, _, _, z = model(xb_flat)
             else:
                 _, mu, logvar, z = model(xb_flat)
 
