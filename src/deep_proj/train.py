@@ -15,9 +15,10 @@ from .model import (
 )
 from .visualize import (
     plot_training_progress,
-    plot_final_results,
-    plot_dirichlet_simplex_nD,
-    visualize_model,
+    plot_training_loss,
+    plot_recons, 
+    plot_latent,
+    plot_side_by_side,
 )
 
 
@@ -178,15 +179,13 @@ def main(cfg: DictConfig):
     # ----------------------------------------------------------
     # Plot epoch 0 (untrained model) once before training loop
     # ----------------------------------------------------------
-    epoch0_img_path = plot_training_progress(
-        model,
-        train_loader.dataset,
-        epoch=0,
-        bottleneck=model_name,
-        device=device,
-        n_samples=10000,
-        save_path=plot_path,
-    )
+
+    recon_0=plot_recons(model, 0, train_loader, device, plot_path,
+                    cfg.model_name, n_samples=8, eval=False)
+    latent_0=plot_latent(model, 0, train_loader, device, plot_path,
+                    cfg.model_name, tsne_samples=1000, eval=False)
+    epoch0_img_path=plot_side_by_side(latent_0, recon_0, plot_path, model_name, 0)
+    
     if wandb_run is not None and epoch0_img_path is not None:
         wandb.log(
             {
@@ -289,8 +288,14 @@ def main(cfg: DictConfig):
 
         # Optional: plot every viz_every epochs
         if epoch % cfg.viz_every == 0 or epoch == epochs:
-            img_path=visualize_model(model, epoch, train_loader, device, plot_path,
-                    cfg.model_name, n_samples=8, tsne_samples=1000)
+            recon=plot_recons(model, epoch, train_loader, device, plot_path,
+                    cfg.model_name, n_samples=8, eval=False)
+            latent=plot_latent(model, epoch, train_loader, device, plot_path,
+                    cfg.model_name, tsne_samples=1000, eval=False)
+            img_path=plot_side_by_side(latent, recon, plot_path, model_name, epoch)
+            #img_path=plot_training_progress(model, epoch, train_loader, device, plot_path,
+                    #cfg.model_name, n_samples=8, tsne_samples=1000)
+            
             # W&B: log the image
             if wandb_run is not None and img_path is not None:
                 wandb.log({f"plots/progress_epoch_{epoch:03d}": wandb.Image(img_path)})
@@ -320,42 +325,17 @@ def main(cfg: DictConfig):
         "recon": recon_hist,
         "kl": kl_hist,
         # later add val_* in visualize,
-        # "val_loss": val_loss_hist,
-        # "val_recon": val_recon_hist,
-        # "val_kl": val_kl_hist,
+         "val_loss": val_loss_hist,
+         "val_recon": val_recon_hist,
+         "val_kl": val_kl_hist,
     }
+    loss_curve_path=plot_training_loss(training_logs,model_name, plot_path,device)
 
-    final_proj_path, final_recon_path = plot_final_results(
-        model,
-        train_loader.dataset,
-        training_logs,
-        bottleneck=model_name,
-        device=device,
-        n_samples=1000,
-        save_path=plot_path,
-    )
-
-    if model_name in ("dirichlet", "dir", "cc"):
-        simplex_path = plot_dirichlet_simplex_nD(
-            model,
-            train_loader.dataset,
-            bottleneck=model_name,
-            device=device,
-            n_points=1000,
-            save_path=plot_path,
-        )
-    else:
-        simplex_path = None
 
     # W&B: log final figures
     if wandb_run is not None:
-        if final_proj_path is not None:
-            wandb.log({"plots/final_projections": wandb.Image(final_proj_path)})
-        if final_recon_path is not None:
-            wandb.log({"plots/final_recons": wandb.Image(final_recon_path)})
-        if simplex_path is not None:
-            wandb.log({"plots/dirichlet_simplex": wandb.Image(simplex_path)})
-
+        if loss_curve_path is not None:
+            wandb.log({"plots/final_projections": wandb.Image(loss_curve_path)})
         wandb_run.finish()
 
 
