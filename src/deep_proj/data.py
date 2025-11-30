@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 import hydra
 from omegaconf import DictConfig
+from medmnist import INFO
 
 
 # ------------------------------------------------------------
@@ -83,46 +84,133 @@ def get_dataloaders(cfg: DictConfig):
         "test": test_loader,
     }
 
-
+###### ALL BELOW HERE IS NOT USED UNLESS RUN DIRECTLY ######
 # ------------------------------------------------------------
 # Hydra entry + visualization only used when running this script directly
 # ------------------------------------------------------------
 @hydra.main(config_path="../../configs", config_name="base_config", version_base="1.3")
 def main(cfg: DictConfig):
     import matplotlib.pyplot as plt
-    import torchvision.utils as vutils
+    import torch
 
-    loaders = get_dataloaders(cfg)
+    dataset_name = cfg.dataset.lower()
 
-    x, y = next(iter(loaders["train"]))
-    print(f"Batch loaded correctly. Shapes: x={x.shape}, y={y.shape}")
-
-    # Visualization only happens when you run this script directly.
-    # When other code imports get_dataloaders, this is never executed.
-    if cfg.dataset.lower() == "mnist":
-        x_vis = x * 0.3081 + 0.1307
+    # ------------------------------------------------------------
+    # Build datasets deterministically (no random_split, no shuffle)
+    # ------------------------------------------------------------
+    if dataset_name == "mnist":
+        train_dataset, _ = _build_mnist(cfg)
+        # MNIST label names
+        label_map = {i: str(i) for i in range(10)}
+        # unnormalize params for viewing
+        def unnorm(x):
+            return (x * 0.3081 + 0.1307).clamp(0, 1)
         cmap = "gray"
-    else:
-        x_vis = x * 0.5 + 0.5
+
+    elif dataset_name == "medmnist":
+        train_dataset, _ = _build_medmnist(cfg)
+
+        from medmnist import INFO
+        label_map = INFO[cfg.medmnist_subset]["label"]
+        # normalize keys to int (sometimes INFO uses string keys)
+        label_map = {int(k): v for k, v in label_map.items()}
+
+        def unnorm(x):
+            return (x * 0.5 + 0.5).clamp(0, 1)
         cmap = None
 
-    x_vis = x_vis.clamp(0, 1)
+    else:
+        raise ValueError(f"Unsupported dataset: {cfg.dataset}")
 
-    grid = vutils.make_grid(x_vis[:64], nrow=8, padding=2)
-    grid_np = grid.permute(1, 2, 0).cpu().numpy()
+    # ------------------------------------------------------------
+    # Collect a non-random, balanced set:
+    # first n_per_class samples per label from train_dataset in order
+    # ------------------------------------------------------------
+    n_per_class = 6  # number of images per label (columns)
+    class_ids = sorted(label_map.keys())
 
-    if grid_np.shape[2] == 1:
-        grid_np = grid_np[..., 0]
+    collected = {c: [] for c in class_ids}
 
-    plt.figure(figsize=(8, 8))
-    plt.title(f"Sample batch ({cfg.dataset})")
-    plt.imshow(grid_np, cmap=cmap)
-    plt.axis("off")
+    # scan dataset in order (deterministic)
+    for idx in range(len(train_dataset)):
+        img, lab = train_dataset[idx]
+
+        # lab might be tensor, numpy scalar, or shape (1,)
+        if isinstance(lab, torch.Tensor):
+            lab_int = int(lab.squeeze().item())
+        else:
+            # numpy or python int
+            lab_int = int(lab)
+
+        if lab_int in collected and len(collected[lab_int]) < n_per_class:
+            collected[lab_int].append(img)
+
+        # stop early if we have enough for all classes
+        if all(len(collected[c]) >= n_per_class for c in class_ids):
+            break
+
+    # ------------------------------------------------------------
+    # Plot with a left text column (labels)
+    # Always show all labels (one row per class)
+    # ------------------------------------------------------------
+    label_col_ratio = 2.3
+    img_col_ratio   = 1.0
+    n_per_class = 6
+    rows = len(class_ids)
+
+    total_ratio_units = label_col_ratio + n_per_class * img_col_ratio
+    unit_w = 1.1
+    fig_w = total_ratio_units * unit_w
+    fig_h = rows * 1.1
+
+    fig, axes = plt.subplots(
+        rows, n_per_class + 1,
+        figsize=(fig_w, fig_h),
+        gridspec_kw={"width_ratios": [label_col_ratio] + [img_col_ratio] * n_per_class}
+    )
+
+    title = f"Sample batch sorted by label ({cfg.dataset}"
+    if dataset_name == "medmnist":
+        title += f"/{cfg.medmnist_subset}"
+    title += ")"
+    fig.suptitle(title, fontsize=20, x=0.5) #to put it more to the center of the figure you would write: plt.suptitle(title, x=0.5)
+
+    if rows == 1:
+        axes = axes[None, :]
+
+    for r, c_id in enumerate(class_ids):
+        # --- left label cell ---
+        ax_label = axes[r, 0]
+        ax_label.axis("off")
+        ax_label.text(
+            1, 0.5, label_map[c_id],   # near the right edge of label column
+            va="center", ha="right",
+            fontsize=16
+        )
+
+        # --- image cells ---
+        imgs_for_class = collected[c_id]
+        for k in range(n_per_class):
+            ax = axes[r, k + 1]
+            ax.axis("off")
+
+            if k >= len(imgs_for_class):
+                continue
+
+            img = unnorm(imgs_for_class[k])
+            if img.shape[0] == 1:
+                ax.imshow(img[0], cmap="gray")
+            else:
+                ax.imshow(img.permute(1, 2, 0), cmap=cmap)
+
+    # first let matplotlib pack stuff...
     plt.tight_layout()
-    plt.savefig("trash_outputs/sample_batch.png", dpi=150)
-    plt.show()
 
-    print("Saved visualization: sample_batch.png")
+    # ...then kill the outer gutter explicitly
+    plt.subplots_adjust(left=-0.13, right=0.995, top=0.93, wspace=0.05, hspace=0.15)
+
+    plt.savefig("trash_outputs/sample_batch_sorted.png", dpi=150)
+    #plt.show()
 
 
 if __name__ == "__main__":

@@ -8,12 +8,10 @@ wandb:
   group: ${model_name}   # group runs by bottleneck type
   mode: online           # or "offline" / "disabled"
 
-
-
 seed: 42
 
 # data (flat keys)
-dataset: mnist            # "mnist" | "medmnist"
+dataset: medmnist            # "mnist" | "medmnist"
 data_root: data
 batch_size: 100
 num_workers: 4
@@ -22,16 +20,20 @@ medmnist_subset: organcmnist   # only used if dataset=medmnist
 
 # model (one at a time)
 model_name: dirichlet        # gaussian | dirichlet | cc
-latent_dim: 50
+latent_dim: 10
 recon_loss: bce
 alpha_init: 0.98            # only used for dirichlet
 cc_components: 10           # only used for cc
 cc_temperature: 1.0         # only used for cc
 
 # trainer
-epochs: 30
+epochs: 10
 lr: 5e-4
 device: auto            # "cuda" | "cpu" | "auto"
+
+# early stopping
+early_stop_patience: 10      # epochs with no improvement before stopping
+early_stop_min_delta: 0.05  # required improvement in val_loss to reset patience
 
 # visualization
 viz_every: 5      # or 1 if you want plots every epoch
