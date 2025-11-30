@@ -171,6 +171,7 @@ def main():
 
     simplex_path = plot_latent_simplex(
         model=model,
+        dataset_name=cfg.dataset,
         loader=test_loader,
         device=device,
         model_type=model_type,
