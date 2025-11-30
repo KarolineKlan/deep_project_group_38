@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 
 EPS = 1e-8
 
@@ -24,6 +25,8 @@ class MLPEncoder(nn.Module):
         # For Gaussian VAE
         self.mu_layer = nn.Linear(last, latent_dim)
         self.logvar_layer = nn.Linear(last, latent_dim)
+        # We only need the lambda_layer for CC-VAE
+        self.lambda_layer = nn.Linear(last, latent_dim)
 
     def forward(self, x):
         h = self.net(x)
@@ -35,6 +38,11 @@ class MLPEncoder(nn.Module):
             mu = self.mu_layer(h)
             logvar = self.logvar_layer(h)
             return mu, logvar
+        elif self.bottle == "cc":
+            # softplus ensures positive lambda_hat (concentration parameter)
+            lambda_hat = F.softplus(self.lambda_layer(h))
+            lambda_hat = lambda_hat.clamp(min=EPS)
+            return lambda_hat
         else:
             raise ValueError(f"Unknown bottle type: {self.bottle}")
 
@@ -224,6 +232,250 @@ def gaussian_vae_elbo_loss(model, x, reduction="mean"):
     loss = recon_loss + kl
     return loss, recon_loss, kl
 
+# =======================
+# Continuous Categorical (CC) helpers and VAE
+# =======================
+
+def lambda_to_eta(lam: Tensor) -> Tensor:
+    """Converts mean parameter lambda [B, K] to natural parameter eta [B, K-1]."""
+    # Uses the correct log-ratio logic from the first block
+    lam = lam.clamp(min=EPS, max=1.0) 
+    last = lam[:, -1].unsqueeze(1)
+    eta_full = torch.log(lam) - torch.log(last + EPS)
+    return eta_full[:, :-1]
+
+def inv_cdf_torch(u, l):
+    """
+    Inverse CDF of the continuous Bernoulli distribution (from first block).
+    Used for reparameterization in CC sampling.
+    """
+    near_half = (l > 0.499) & (l < 0.501)
+    safe_l = l.clamp(EPS, 1 - EPS)
+    u = u.clamp(EPS, 1 - EPS)
+    
+    num = torch.log(u * (2 * safe_l - 1) + 1 - safe_l) - torch.log(1 - safe_l)
+    den = torch.log(safe_l) - torch.log(1 - safe_l)
+    x = num / den
+    return torch.where(near_half, u, x)
+
+def sample_cc_ordered_reparam(lam):
+    """
+    Ordered Reparameterized Sampler (from first block - Differentiable).
+    Replaces the non-differentiable sample_cc_perm logic.
+    lam: [B, K]
+    Returns: [B, K] sample on the simplex.
+    """
+    B, K = lam.shape
+    lam_sorted, indices = torch.sort(lam, dim=1, descending=True)
+    lam_1 = lam_sorted[:, 0].unsqueeze(1) 
+    lam_rest = lam_sorted[:, 1:] 
+    
+    cb_params = lam_rest / (lam_rest + lam_1 + EPS)
+
+    final_x_rest = torch.zeros_like(lam_rest)
+    active_mask = torch.ones(B, dtype=torch.bool, device=lam.device)
+    max_attempts = 1000 
+    
+    for _ in range(max_attempts):
+        if not active_mask.any():
+            break
+        
+        n_active = active_mask.sum()
+        u = torch.rand(n_active, K-1, device=lam.device, dtype=lam.dtype)
+        active_params = cb_params[active_mask]
+        x_cand = inv_cdf_torch(u, active_params) 
+        sums = x_cand.sum(dim=1)
+        accepted_now = (sums <= 1.0)
+        
+        active_indices = torch.nonzero(active_mask).squeeze(-1)
+        accepted_indices = active_indices[accepted_now]
+        
+        if accepted_indices.numel() > 0:
+            final_x_rest[accepted_indices] = x_cand[accepted_now]
+            active_mask = active_mask.clone()
+            active_mask[accepted_indices] = False
+            
+    x_1 = (1.0 - final_x_rest.sum(dim=1, keepdim=True)).clamp(min=EPS)
+    x_sorted = torch.cat([x_1, final_x_rest], dim=1)
+    
+    x_final = torch.zeros_like(lam)
+    x_final.scatter_(1, indices, x_sorted)
+    
+    return x_final
+
+def cc_log_norm_const(eta: Tensor) -> Tensor:
+    """
+    Calculates log C(eta) using the Exact Formula (from the first block, simpler/correct version).
+    Input: eta: (n, K-1) tensor.
+    Returns: log_C : (n,) tensor equal to log C_K(eta)
+    """
+    original_dtype = eta.dtype
+    eta = eta.double()
+
+    B, K_minus_1 = eta.shape
+    K = K_minus_1 + 1
+    device = eta.device
+    
+    # 1. Construct full eta (append 0 for the Kth component)
+    eta_full = torch.cat([eta, torch.zeros(B, 1, device=device, dtype=eta.dtype)], dim=1)
+    
+    # 2. Add Jitter (Crucial for stability in the first block's implementation)
+    jitter = torch.arange(K, device=device) * 1e-5
+    eta_full = eta_full + jitter.unsqueeze(0)
+
+    # 3. Compute the denominator product: prod_{i!=k} (eta_i - eta_k) 
+    eta_i = eta_full.unsqueeze(1) 
+    eta_k = eta_full.unsqueeze(2)
+    diffs = eta_i - eta_k
+    
+    eye_mask = torch.eye(K, device=device).bool().unsqueeze(0).expand(B, -1, -1)
+    diffs[eye_mask] = 1.0 
+    
+    log_diffs_abs = diffs.abs().log()
+    diffs_sign = diffs.sign()
+    
+    log_denom = log_diffs_abs.sum(dim=1) 
+    denom_sign = diffs_sign.prod(dim=1) 
+    
+    log_terms_mag = eta_full - log_denom
+    terms_sign = denom_sign
+    
+    # 4. Sum the terms: S = sum_k (T_k)
+    max_log_mag, _ = log_terms_mag.max(dim=1, keepdim=True)
+    sum_scaled = torch.sum(terms_sign * torch.exp(log_terms_mag - max_log_mag), dim=1)
+    
+    # 5. Multiply by (-1)^(K+1) 
+    global_sign = (-1)**(K + 1)
+    total_sum_signed = global_sign * sum_scaled
+    
+    log_inv_C = max_log_mag.squeeze() + torch.log(total_sum_signed.clamp(min=EPS))
+    
+    # Return log C = - log(C^-1)
+    return -log_inv_C.to(dtype=original_dtype)
+
+def cc_log_prob(sample: Tensor, eta: Tensor) -> Tensor:
+    """
+    Calculates the log-density p(z | eta) = eta^T * z + log C(eta).
+    sample: [B, K], eta: [B, K-1]
+    Returns: [B]
+    """
+    n, K_minus_1 = eta.shape
+    aug_eta = torch.cat([eta, torch.zeros(n, 1, device=eta.device, dtype=eta.dtype)], dim=-1)
+    
+    # Exponent term: eta^T * z
+    exponent = torch.sum(sample * aug_eta, dim=1) 
+    
+    # Log Normalizer term
+    log_norm_const = cc_log_norm_const(eta)
+    
+    return exponent + log_norm_const 
+
+def cc_kl(lambda_hat, prior_lambda, reduction='batchmean'):
+    """
+    KL Divergence (Analytical form based on the second code block's KL formulation)
+    KL(Q||P) = E_q[eta_q^T z] - E_q[eta_p^T z] - log C(eta_q) + log C(eta_p)
+    KL(Q||P) = [E_q[eta_q^T z] + log C(eta_q)] - [E_q[eta_p^T z] + log C(eta_p)]
+    
+    Since E_q[z] is lambda_hat (the mean parameter), this simplifies:
+    KL(Q||P) = (eta_hat - eta_prior)^T lambda_hat + log C(eta_prior) - log C(eta_hat)
+    
+    lambda_hat: (batch, K)
+    prior_lambda: (K,) or (batch, K)
+    """
+    if prior_lambda.dim() == 1:
+        prior = prior_lambda.unsqueeze(0).expand_as(lambda_hat)
+    else:
+        prior = prior_lambda
+        
+    eta_hat = lambda_to_eta(lambda_hat)      # q params (B, K-1)
+    eta_prior = lambda_to_eta(prior)         # p params (B, K-1)
+
+    # For calculation ease, use augmented eta and lambda_hat (mean vector)
+    aug_eta_hat = torch.cat([eta_hat, torch.zeros(eta_hat.size(0), 1, device=eta_hat.device, dtype=eta_hat.dtype)], dim=-1) # (B, K)
+    aug_eta_prior = torch.cat([eta_prior, torch.zeros(eta_prior.size(0), 1, device=eta_prior.device, dtype=eta_prior.dtype)], dim=-1) # (B, K)
+
+    # Term 1: E_q[eta_q^T z - eta_p^T z] = E_q[(eta_q - eta_p)^T z] = (eta_q - eta_p)^T E_q[z]
+    # E_q[z] is lambda_hat (mean parameter)
+    diff_eta = aug_eta_hat - aug_eta_prior
+    term1 = torch.sum(diff_eta * lambda_hat, dim=1) # (B)
+
+    # Term 2: log C(eta_prior) - log C(eta_hat)
+    logC_hat = cc_log_norm_const(eta_hat)
+    logC_prior = cc_log_norm_const(eta_prior)
+    term2 = logC_prior - logC_hat
+
+    kl = term1 + term2
+    if reduction == 'batchmean':
+        return kl.mean()
+    elif reduction == 'sum':
+        return kl.sum()
+    else:
+        return kl 
+
+
+class CCVAE(nn.Module):
+    def __init__(self, input_dim, enc_hidden_dims, dec_hidden_dims, latent_dim, prior_lambda=None):
+        super().__init__()
+        self.latent_dim = latent_dim
+        # Use CC bottleneck configuration
+        self.encoder = MLPEncoder(input_dim, enc_hidden_dims, latent_dim, "cc")
+        # Decoder takes K dimensions (the full simplex vector)
+        self.decoder = BernoulliDecoder(latent_dim, dec_hidden_dims, input_dim)
+
+        if prior_lambda is None:
+            prior_lambda = torch.ones(latent_dim) # Flat prior, as used in other CC papers
+        elif torch.is_tensor(prior_lambda):
+            if prior_lambda.numel() == 1:
+                prior_lambda = prior_lambda.repeat(latent_dim)
+        else:
+            prior_lambda = torch.tensor(float(prior_lambda)).repeat(latent_dim)
+
+        # Normalize prior_lambda to sum to 1 (mean vector of the uniform prior)
+        prior_lambda = prior_lambda / prior_lambda.sum()
+
+        self.register_buffer('prior_lambda', prior_lambda.float())
+        
+    def forward(self, x):
+        """
+        x: flattened input (batch, input_dim) 
+        returns: reconstruction logits, z_K (full simplex sample), lambda_hat
+        """
+        lambda_hat = self.encoder(x)  # (batch, K) - concentration parameter
+        # Normalize lambda_hat to get the mean vector (lambda)
+        lambda_norm = lambda_hat / lambda_hat.sum(dim=1, keepdim=True)
+        
+        # Reparameterized sampling to get z_K (full simplex sample)
+        z_K = sample_cc_ordered_reparam(lambda_norm)
+        
+        # Note: The decoder in the second block takes the full K-dimensional simplex vector.
+        logits = self.decoder(z_K)  # (batch, input_dim)
+        
+        return logits, z_K, lambda_norm
+
+def ccvae_elbo_loss(model, x, reduction='mean'):
+    """
+    Compute negative ELBO (loss to minimize) for Bernoulli decoder (without beta/free-bits).
+    x: (batch, input_dim) values in [0,1]
+    returns loss (scalar), recon_loss (scalar), kl (scalar)
+    """
+    # Note: lam here is lambda_norm (the mean parameter)
+    logits, z_K, lambda_norm = model(x)
+    
+    # 1. Reconstruction Loss (Negative Log-Likelihood)
+    bce = F.binary_cross_entropy_with_logits(logits, x, reduction='none')
+    recon_per_sample = bce.sum(dim=1)  # per example NLL
+    
+    if reduction == 'mean':
+        recon_loss = recon_per_sample.mean()
+    else:
+        recon_loss = recon_per_sample.sum()
+        
+    # 2. KL Divergence 
+    kl = cc_kl(lambda_norm, model.prior_lambda, reduction='batchmean')
+    kl = torch.abs(kl)
+    # Loss = -ELBO = Recon Loss + KL
+    loss = recon_loss + kl
+    return loss, recon_loss, kl
 
 if __name__ == "__main__":
     model = MLPEncoder()

@@ -34,16 +34,18 @@ def plot_latent(model, epoch, loader, device, save_dir,
                 xb2 = xb2 * 0.5 + 0.5
 
             xb2 = xb2.view(xb2.size(0), -1)
-
+            #print("xb2 shape:", xb2.shape)
             if model_name == "dirichlet":
                 _, z2, _, _ = model(xb2)
             elif model_name == "gaussian":
                 _, mu2, logvar2, z2 = model(xb2)
             elif model_name == "cc":
-                _, z2, _, _ = model(xb2)  # CHANGE THIS WHEN CC IS IMPLEMENTED
+                logits, z2, lambda_norm = model(xb2)  # CHANGE THIS WHEN CC IS IMPLEMENTED
+                #z2 = lambda_norm # this makes the plots less sparse but im not sure if it's correct
             else:
                 raise ValueError("Invalid bottleneck_name")
-
+            
+            #print("z2 shape:", z2.shape)
             z_all.append(z2.cpu())
             y_all.append(yb2)
 
@@ -54,7 +56,11 @@ def plot_latent(model, epoch, loader, device, save_dir,
     y_all = torch.cat(y_all, dim=0)[:tsne_samples].numpy()
 
     # Remove NaNs in z_all
+    #print("z_all before NaN filter:", z_all.shape[0])
     mask = ~np.isnan(z_all).any(axis=1)
+    #print("z_all after NaN filter:", mask.sum())
+    #print("z_all min / max:", z_all.min(), z_all.max())
+    #print("first 5 z rows:\n", z_all[:5])
     z_all = z_all[mask]
     y_all = y_all[mask]
 
@@ -112,7 +118,7 @@ def plot_recons(model, epoch, loader, device, save_dir,
         elif model_name == "gaussian":
             logits, mu, logvar, z = model(xb)
         elif model_name == "cc":
-            _, z2, _, _ = model(xb)  # CHANGE THIS WHEN CC IS IMPLEMENTED
+            logits, z2, lambda_norm = model(xb)  # CHANGE THIS WHEN CC IS IMPLEMENTED
         else:
             raise ValueError("Invalid model_name")
 
@@ -219,6 +225,8 @@ def plot_training_progress(model, epoch, loader, device, save_dir,
             logits, z, _, _ = model(xb)
         elif model_name == "gaussian":
             logits, mu, logvar, z = model(xb)
+        elif model_name == "cc" or model_name == "ccvae":
+            logits, z, lambda_norm = model(xb)
         else:
             raise ValueError("Invalid model_name")
 
@@ -241,10 +249,15 @@ def plot_training_progress(model, epoch, loader, device, save_dir,
         for xb2, yb2 in loader:
             xb2 = xb2.to(device).view(xb2.size(0), -1)
 
-            if model_name == "dirichlet":
+
+            if model_name == "dirichlet" or model_name == "dir":
                 _, z2, _, _ = model(xb2)
-            else:
+            elif model_name == "gaussian" or model_name in ("gaus", "gauss"):
                 _, mu2, logvar2, z2 = model(xb2)
+            elif model_name == "cc" or model_name == "ccvae":
+                logits2, z2, lambda_norm2 = model(xb2)
+            else:
+                raise ValueError(f"Invalid model_name: {model_name}")
 
             z_all.append(z2.cpu())
             y_all.append(yb2)
