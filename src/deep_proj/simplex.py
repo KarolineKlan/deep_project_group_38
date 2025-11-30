@@ -10,7 +10,7 @@ def get_polygon_vertices(n_vertices, radius=1.0):
     return np.stack([np.cos(angles), np.sin(angles)], axis=1) * radius
 
 
-def plot_latent_simplex(model, loader, device, model_type="gaussian", n_samples=None, save_dir=None, model_name="Model", map="tab10", point_size=50, alpha=0.7, image_zoom=0.55):
+def plot_latent_simplex(model, dataset_name, loader, device, model_type="gaussian", n_samples=None, save_dir=None, model_name="Model", map="tab10", point_size=50, alpha=0.7, image_zoom=0.55):
     """
     Plot latent simplex + show MNIST images at the corners.
     Works for any dataset because image is obtained directly from loader.dataset[idx].
@@ -24,6 +24,12 @@ def plot_latent_simplex(model, loader, device, model_type="gaussian", n_samples=
     with torch.no_grad():
         for batch_i, (xb, yb) in enumerate(loader):
             xb_flat = xb.to(device).view(xb.size(0), -1)
+
+            # undo normalization just like in training
+            if dataset_name.lower() == "mnist":
+                xb_flat = xb_flat * 0.3081 + 0.1307
+            elif dataset_name.lower() == "medmnist":
+                xb_flat = xb_flat * 0.5 + 0.5
 
             if model_type.lower() == "dirichlet":
                 _, _, _, z = model(xb_flat)
@@ -52,20 +58,6 @@ def plot_latent_simplex(model, loader, device, model_type="gaussian", n_samples=
     # --- Normalize latent vectors to simplex ---
     z_all = z_all / (z_all.sum(dim=1, keepdim=True) + 1e-8)
     z_np = z_all.numpy()
-
-    #print(z_np.shape)
-    #print(z_np[:5])
-
-    # Compute mask BEFORE filtering
-    mask = ~np.isnan(z_np).any(axis=1)
-
-    # Apply mask to *all* arrays
-    z_np = z_np[mask]
-    y_all = y_all[mask]
-    idx_all = idx_all[mask]
-
-    #print(z_np.shape)
-    #print(z_np[:5])
 
     latent_dim = z_np.shape[1]
     vertices = get_polygon_vertices(latent_dim)
