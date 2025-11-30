@@ -21,7 +21,38 @@ def _build_mnist(cfg: DictConfig):
     test_dataset = datasets.MNIST(
         cfg.data_root, train=False, download=True, transform=transform
     )
+
+    # ---------------------------
+    # CLASS FILTERING IF USED
+    # ---------------------------
+    if cfg.get("mnist_classes") is not None:
+        selected = set(int(x) for x in cfg.mnist_classes)
+
+        def to_int(l):
+            # MNIST labels can be Python ints or 0-dim tensors
+            if isinstance(l, torch.Tensor):
+                return int(l.item())
+            return int(l)
+
+        # ---- Filter train dataset ----
+        train_labels = [to_int(l) for l in train_dataset.targets]
+        train_mask = torch.tensor([l in selected for l in train_labels])
+        train_indices = torch.where(train_mask)[0]
+        train_dataset = torch.utils.data.Subset(train_dataset, train_indices)
+
+        # ---- Filter test dataset ----
+        test_labels = [to_int(l) for l in test_dataset.targets]
+        test_mask = torch.tensor([l in selected for l in test_labels])
+        test_indices = torch.where(test_mask)[0]
+        test_dataset = torch.utils.data.Subset(test_dataset, test_indices)
+
+        # Debug prints (safe to keep)
+        print(f"[MNIST FILTER] Selected classes: {selected}")
+        print(f"[MNIST FILTER] Train samples: {len(train_dataset)}")
+        print(f"[MNIST FILTER] Test samples:  {len(test_dataset)}")
+
     return train_dataset, test_dataset
+
 
 
 def _build_medmnist(cfg: DictConfig):

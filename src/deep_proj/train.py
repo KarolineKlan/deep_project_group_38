@@ -12,9 +12,10 @@ from .model import (
     DirVAE,
     dirvae_elbo_loss,
     gaussian_vae_elbo_loss,
+    CCVAE,              
+    ccvae_elbo_loss,    
 )
 from .visualize import (
-    plot_training_progress,
     plot_training_loss,
     plot_recons,
     plot_latent,
@@ -47,7 +48,7 @@ def evaluate_split(model, loader, loss_fn, cfg, device):
                 xb = xb * 0.5 + 0.5
 
             xb = xb.view(xb.size(0), -1)
-            loss, recon, kl = loss_fn(model, xb, reduction="mean")
+            loss, recon, kl = loss_fn(model, xb, reduction="mean") 
 
             bs = xb.size(0)
             n += bs
@@ -179,6 +180,18 @@ def main(cfg: DictConfig):
         ).to(device)
         loss_fn = gaussian_vae_elbo_loss
         tag = "GAUSS"
+    elif model_name in ("cc", "ccvae", "cc_vae"):
+        # You can either use cfg.latent_dim or cfg.cc_components here.
+        # Easiest: keep them equal in the config.
+        model = CCVAE(
+            input_dim=input_dim,
+            enc_hidden_dims=[500, 500],
+            dec_hidden_dims=[500],
+            latent_dim=latent_dim,
+            prior_lambda=None,
+        ).to(device)
+        loss_fn = ccvae_elbo_loss
+        tag = "CC"
     else:
         raise ValueError(f"Unknown model_name: {cfg.model_name}")
 
