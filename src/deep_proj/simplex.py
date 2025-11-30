@@ -27,9 +27,9 @@ def plot_latent_simplex(model, dataset_name, loader, device, model_type="gaussia
 
             # undo normalization just like in training
             if dataset_name.lower() == "mnist":
-                xb = xb * 0.3081 + 0.1307
+                xb_flat = xb_flat * 0.3081 + 0.1307
             elif dataset_name.lower() == "medmnist":
-                xb = xb * 0.5 + 0.5
+                xb_flat = xb_flat * 0.5 + 0.5
 
             if model_type.lower() == "dirichlet":
                 _, _, _, z = model(xb_flat)
@@ -58,20 +58,6 @@ def plot_latent_simplex(model, dataset_name, loader, device, model_type="gaussia
     # --- Normalize latent vectors to simplex ---
     z_all = z_all / (z_all.sum(dim=1, keepdim=True) + 1e-8)
     z_np = z_all.numpy()
-
-    print(z_np.shape)
-    print(z_np[:5])
-
-    # Compute mask BEFORE filtering
-    mask = ~np.isnan(z_np).any(axis=1)
-
-    # Apply mask to *all* arrays
-    z_np = z_np[mask]
-    y_all = y_all[mask]
-    idx_all = idx_all[mask]
-
-    print(z_np.shape)
-    print(z_np[:5])
 
     latent_dim = z_np.shape[1]
     vertices = get_polygon_vertices(latent_dim)
