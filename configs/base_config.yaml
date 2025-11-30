@@ -11,15 +11,17 @@ wandb:
 seed: 42
 
 # data (flat keys)
-dataset: medmnist            # "mnist" | "medmnist"
+dataset: mnist            # "mnist" | "medmnist"
 data_root: data
 batch_size: 100
 num_workers: 4
 val_split: 0.1
 medmnist_subset: organcmnist   # only used if dataset=medmnist
 
+mnist_classes: [0,1]      # Which classes to load, if null defaults to "all", else list of ints e.g. [0,1,2]
+
 # model (one at a time)
-model_name: dirichlet        # gaussian | dirichlet | cc
+model_name: cc        # gaussian | dirichlet | cc
 latent_dim: 10
 recon_loss: bce
 alpha_init: 0.98            # only used for dirichlet
@@ -27,8 +29,8 @@ cc_components: 10           # only used for cc
 cc_temperature: 1.0         # only used for cc
 
 # trainer
-epochs: 10
-lr: 5e-4
+epochs: 3
+lr: 4e-4
 device: auto            # "cuda" | "cpu" | "auto"
 
 # early stopping
@@ -36,7 +38,7 @@ early_stop_patience: 10      # epochs with no improvement before stopping
 early_stop_min_delta: 0.05  # required improvement in val_loss to reset patience
 
 # visualization
-viz_every: 5      # or 1 if you want plots every epoch
+viz_every: 1      # or 1 if you want plots every epoch
 
 # checkpoint saving and loading
 checkpoint_name: "${dataset}_${model_name}_z${latent_dim}_lr${lr}_best.pt"
