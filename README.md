@@ -1,5 +1,4 @@
 # Variational Autoencoders With Alternative Bottlenecks  
-### Gaussian · Dirichlet · Continuous Categorical (CC)
 
 <img src="project_images/VAE figure.png" width="600"/>
 
@@ -139,4 +138,5 @@ Model checkpoints are saved under:
 For comparison of 3 trained models hardcode the paths to the model.pt files in `evaluate_multiple.py` and run:
 ```bash
 python -m src.deep_proj.evaluate_multiple
+
 ```
