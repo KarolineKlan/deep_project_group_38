@@ -353,24 +353,8 @@ def cc_log_norm_const(eta: Tensor) -> Tensor:
     # Return log C = - log(C^-1)
     return -log_inv_C.to(dtype=original_dtype)
 
-def cc_log_prob(sample: Tensor, eta: Tensor) -> Tensor:
-    """
-    Calculates the log-density p(z | eta) = eta^T * z + log C(eta).
-    sample: [B, K], eta: [B, K-1]
-    Returns: [B]
-    """
-    n, K_minus_1 = eta.shape
-    aug_eta = torch.cat([eta, torch.zeros(n, 1, device=eta.device, dtype=eta.dtype)], dim=-1)
-    
-    # Exponent term: eta^T * z
-    exponent = torch.sum(sample * aug_eta, dim=1) 
-    
-    # Log Normalizer term
-    log_norm_const = cc_log_norm_const(eta)
-    
-    return exponent + log_norm_const 
 
-def cc_kl(lambda_hat, prior_lambda, reduction='batchmean'):
+def cc_kl(lambda_hat, prior_lambda, z, reduction='batchmean'):
     """
     KL Divergence (Analytical form based on the second code block's KL formulation)
     KL(Q||P) = E_q[eta_q^T z] - E_q[eta_p^T z] - log C(eta_q) + log C(eta_p)
@@ -397,12 +381,12 @@ def cc_kl(lambda_hat, prior_lambda, reduction='batchmean'):
     # Term 1: E_q[eta_q^T z - eta_p^T z] = E_q[(eta_q - eta_p)^T z] = (eta_q - eta_p)^T E_q[z]
     # E_q[z] is lambda_hat (mean parameter)
     diff_eta = aug_eta_hat - aug_eta_prior
-    term1 = torch.sum(diff_eta * lambda_hat, dim=1) # (B)
+    term1 = torch.sum(diff_eta * z, dim=1) # (B)
 
     # Term 2: log C(eta_prior) - log C(eta_hat)
     logC_hat = cc_log_norm_const(eta_hat)
     logC_prior = cc_log_norm_const(eta_prior)
-    term2 = logC_prior - logC_hat
+    term2 = logC_hat - logC_prior
 
     kl = term1 + term2
     if reduction == 'batchmean':
@@ -471,8 +455,8 @@ def ccvae_elbo_loss(model, x, reduction='mean'):
         recon_loss = recon_per_sample.sum()
         
     # 2. KL Divergence 
-    kl = cc_kl(lambda_norm, model.prior_lambda, reduction='batchmean')
-    kl = torch.abs(kl)
+    kl = cc_kl(lambda_norm, model.prior_lambda, z_K, reduction='batchmean')
+    
     # Loss = -ELBO = Recon Loss + KL
     loss = recon_loss + kl
     return loss, recon_loss, kl
