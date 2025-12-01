@@ -255,7 +255,7 @@ def inv_cdf_torch(u, l):
     
     num = torch.log(u * (2 * safe_l - 1) + 1 - safe_l) - torch.log(1 - safe_l)
     den = torch.log(safe_l) - torch.log(1 - safe_l)
-    x = num / den
+    x = num / (den + EPS)
     return torch.where(near_half, u, x)
 
 def sample_cc_ordered_reparam(lam):
@@ -426,8 +426,9 @@ class CCVAE(nn.Module):
         """
         lambda_hat = self.encoder(x)  # (batch, K) - concentration parameter
         # Normalize lambda_hat to get the mean vector (lambda)
-        lambda_norm = lambda_hat / lambda_hat.sum(dim=1, keepdim=True)
-        
+        # lambda_norm = lambda_hat / lambda_hat.sum(dim=1, keepdim=True)
+        lambda_norm = lambda_hat / lambda_hat.sum(dim=1, keepdim=True).clamp(min=EPS)
+
         # Reparameterized sampling to get z_K (full simplex sample)
         z_K = sample_cc_ordered_reparam(lambda_norm)
         
