@@ -10,7 +10,7 @@ def get_polygon_vertices(n_vertices, radius=1.0):
     return np.stack([np.cos(angles), np.sin(angles)], axis=1) * radius
 
 
-def plot_latent_simplex(model, dataset_name, loader, device, model_type="gaussian", n_samples=None, save_dir=None, model_name="Model", map="tab10", point_size=50, alpha=0.7, image_zoom=0.55):
+def plot_latent_simplex(model, dataset_name, loader, device, model_type="gaussian", class_labels=None, n_samples=None, save_dir=None, model_name="Model", map="tab10", point_size=50, alpha=0.7, image_zoom=0.55):
     """
     Plot latent simplex + show MNIST images at the corners.
     Works for any dataset because image is obtained directly from loader.dataset[idx].
@@ -73,10 +73,39 @@ def plot_latent_simplex(model, dataset_name, loader, device, model_type="gaussia
     for i, j in itertools.combinations(range(latent_dim), 2):
         ax.plot([vertices[i,0], vertices[j,0]], [vertices[i,1], vertices[j,1]], 'k--', alpha=0.4)
 
-    # plot points
-    sc = ax.scatter(projected[:,0], projected[:,1], c=y_all.numpy(), s=point_size, alpha=alpha, edgecolor="k", linewidth=0.3, cmap="tab10")
+    y_np = y_all.cpu().numpy() if hasattr(y_all, "cpu") else np.array(y_all)
+
+    # --- Determine which classes to include in legend & color mapping ---
+    if class_labels is None:
+        unique_classes = np.unique(y_np)
+        unique_classes.sort()
+    else:
+        unique_classes = np.array(class_labels)
+
+    # --- Build mapping: class_id -> tab10 color ---
+    base_cmap = plt.get_cmap("tab10")
+    try:
+        palette = list(base_cmap.colors)
+    except AttributeError:
+        palette = [base_cmap(i) for i in range(base_cmap.N)]
+
+    color_map = {int(cls): palette[int(cls) % len(palette)] for cls in unique_classes}
+
+    # --- Map each point to its corresponding color ---
+    point_colors = [color_map[int(lbl)] for lbl in y_np]
+
+    # --- Plot scatter with exact colors ---
+    sc = ax.scatter(projected[:, 0], projected[:, 1], c=point_colors, s=point_size, alpha=alpha, edgecolor="k", linewidth=0.3)
+
+    # --- Legend matching exact class colors ---
+    legend_handles = [
+        plt.Line2D( [0], [0], marker="o", color=color_map[int(cls)], linestyle="", markersize=7, label=str(int(cls)))
+        for cls in unique_classes
+    ]
+
     fig = plt.gcf()
-    fig.colorbar(sc, ax=ax)
+    fig.legend(handles=legend_handles, ncol=len(unique_classes), loc="lower center", bbox_to_anchor=(0.5, -0.06), frameon=False, fontsize=15)
+
 
     # === Place original images at vertices ===
     for v_idx in range(latent_dim):
