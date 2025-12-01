@@ -32,9 +32,14 @@ def plot_latent_simplex(model, dataset_name, loader, device, model_type="gaussia
                 xb_flat = xb_flat * 0.5 + 0.5
 
             if model_type.lower() == "dirichlet":
-                _, _, _, z = model(xb_flat)
+                _, _, _, z = model(xb_flat)   # returns 4 values
+            elif model_type.lower() == "gaussian":
+                _, mu, logvar, z = model(xb_flat)   # returns 4 values
+            elif model_type.lower() == "cc":
+                _, z, _ = model(xb_flat)   # returns 3 values
             else:
-                _, mu, logvar, z = model(xb_flat)
+                raise ValueError(f"Unknown model_type: {model_type}")
+
 
             z_all.append(z.cpu())
             y_all.append(yb)
