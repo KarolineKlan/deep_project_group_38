@@ -21,8 +21,10 @@ from .data import get_dataloaders
 from .model import (
     GaussianVAE,
     DirVAE,
+    CCVAE,
     dirvae_elbo_loss,
     gaussian_vae_elbo_loss,
+    ccvae_elbo_loss,
 )
 from .train import evaluate_split  # reuse your existing helper
 
@@ -65,6 +67,15 @@ def build_model_from_config(cfg: DictConfig, device: torch.device):
             latent_dim=latent_dim,
         ).to(device)
         loss_fn = gaussian_vae_elbo_loss
+    
+    elif model_name in ("cc"):
+        model = CCVAE(
+            input_dim=input_dim,
+            enc_hidden_dims=[500, 500],
+            dec_hidden_dims=[500],
+            latent_dim=latent_dim,
+        ).to(device)
+        loss_fn = ccvae_elbo_loss
 
     else:
         raise ValueError(f"Unknown model_name: {cfg.model_name}")
@@ -164,7 +175,15 @@ def main():
     print(f"Saving evaluation plots to: {eval_dir}")
 
     # --------- Plotting latent simplex ---------
-    model_type = "dirichlet" if cfg.model_name.lower() in ("dir", "dirichlet") else "gaussian"
+    model_name = cfg.model_name.lower()
+    if model_name in ("dir", "dirichlet"):
+        model_type = "dirichlet"
+    elif model_name in ("gaus", "gaussian", "gauss"):
+        model_type = "gaussian"
+    elif model_name in ("cc", "ccvae"):
+        model_type = "cc"
+    else:
+        raise ValueError(f"Unknown model_name: {cfg.model_name}")
 
 
 
@@ -175,6 +194,7 @@ def main():
         loader=test_loader,
         device=device,
         model_type=model_type,
+        class_labels=cfg.mnist_classes,
         n_samples=5000,
         save_dir=eval_dir,
         model_name=run_id,  # so the file name also matches the run_id
