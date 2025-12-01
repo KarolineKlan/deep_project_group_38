@@ -175,6 +175,7 @@ def main():
         loader=test_loader,
         device=device,
         model_type=model_type,
+        class_labels=cfg.mnist_classes,
         n_samples=5000,
         save_dir=eval_dir,
         model_name=run_id,  # so the file name also matches the run_id
