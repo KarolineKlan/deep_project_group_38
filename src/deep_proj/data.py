@@ -5,7 +5,7 @@ from torchvision import datasets, transforms
 import hydra
 from omegaconf import DictConfig
 from medmnist import INFO
-
+import numpy as np
 
 # ------------------------------------------------------------
 # Dataset builders
@@ -78,6 +78,30 @@ def _build_medmnist(cfg: DictConfig):
     test_dataset = DataClass(
         split="test", download=True, root=cfg.data_root, transform=transform
     )
+
+    # ---------------------------
+    # OPTIONAL CLASS FILTERING
+    # ---------------------------
+    # MedMNIST stores labels in dataset.labels as a NumPy array (N, 1) or (N,)
+    if cfg.get("medmnist_classes") is not None:
+        selected = set(int(x) for x in cfg.medmnist_classes)
+
+        # ---- Filter train dataset ----
+        train_labels = train_dataset.labels.squeeze()  # shape (N,)
+        train_mask = np.isin(train_labels, list(selected))
+        train_indices = np.where(train_mask)[0]
+        train_dataset = torch.utils.data.Subset(train_dataset, train_indices)
+
+        # ---- Filter test dataset ----
+        test_labels = test_dataset.labels.squeeze()
+        test_mask = np.isin(test_labels, list(selected))
+        test_indices = np.where(test_mask)[0]
+        test_dataset = torch.utils.data.Subset(test_dataset, test_indices)
+
+        print(f"[MEDMNIST FILTER] Subset: {data_flag}")
+        print(f"[MEDMNIST FILTER] Selected classes: {selected}")
+        print(f"[MEDMNIST FILTER] Train samples: {len(train_dataset)}")
+        print(f"[MEDMNIST FILTER] Test samples:  {len(test_dataset)}")
     return train_dataset, test_dataset
 
 

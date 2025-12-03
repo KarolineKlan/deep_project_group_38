@@ -11,17 +11,19 @@ wandb:
 seed: 42
 
 # data (flat keys)
-dataset: mnist            # "mnist" | "medmnist"
+dataset: medmnist            # "mnist" | "medmnist"
 data_root: data
 batch_size: 100
 num_workers: 4
 val_split: 0.1
 medmnist_subset: organcmnist   # only used if dataset=medmnist
 
+#DATASET SUBSETS
+medmnist_classes: [0,1,2]         # e.g. [0,1,2] if you want only some classes
 mnist_classes: [0,1]      # Which classes to load, if null defaults to "all", else list of ints e.g. [0,1,2]
 
 # model (one at a time)
-model_name: cc        # gaussian | dirichlet | cc
+model_name: gaussian        # gaussian | dirichlet | cc
 latent_dim: 10
 recon_loss: bce
 alpha_init: 0.98            # only used for dirichlet
