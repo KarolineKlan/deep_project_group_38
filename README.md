@@ -10,7 +10,7 @@ Specifically, we compare:
 - **Continuous Categorical (CC) VAE** (a newer exponential-family simplex distribution)
 
 Our code and experiments are included in the repository.  
-See the full project report for details on the theoretical foundations and experimental results.  See [**Explainer_Notebook.ipynb**](Explainer_Notebook.ipynb) for collection of non-executable code and explanations, however refer to description below of how to execute the project as a module from the terminal.
+See the full project report for details on code the theoretical foundations and experimental results.  See [**Explainer_Notebook.ipynb**](Explainer_Notebook.ipynb) for explanations of the code, however refer to description below of how to execute the project as a module from the terminal.
 
 ## Authors
 
