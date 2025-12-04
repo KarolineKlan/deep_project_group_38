@@ -19,7 +19,7 @@ from .data import get_dataloaders
 from .model import (
     GaussianVAE,
     DirVAE,
-    # CCVAE,
+    CCVAE,
 )
 
 # -------------------------------------------------------------------
@@ -33,9 +33,9 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 # Number of images per row in the reconstruction comparison figure.
 # Change this to 10, 12, ... if you want more examples.
 N_RECON_SAMPLES = 12
-GAUSS_FINAL_MODEL = "mnist_gaussian_z10_lr0.0005_best.pt"
-DIR_FINAL_MODEL = "mnist_dirichlet_z10_lr0.0005_best.pt"
-CC_FINAL_MODEL = "mnist_dirichlet_z50_lr0.0005_best.pt"  # placeholder for CC
+GAUSS_FINAL_MODEL = "final_sweep/final_sweep/mnist_gaussian_z8_lr0.0007_best.pt"
+DIR_FINAL_MODEL = "final_sweep/final_sweep/mnist_dirichlet_z8_lr0.0007_best.pt"
+CC_FINAL_MODEL = "final_sweep/final_sweep/mnist_cc_z3_lr0.0003_best.pt"  # placeholder for CC
 
 # -------------------------------------------------------------------
 # Device helper
@@ -71,12 +71,12 @@ def build_model_from_config(cfg: DictConfig, device: torch.device):
         ).to(device)
     elif name in ("cc", "ccvae", "continuous_categorical"):
         # TODO: replace with CCVAE once implemented  # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        model = DirVAE(
+        model = CCVAE(
             input_dim=input_dim,
             enc_hidden_dims=[500, 500],
             dec_hidden_dims=[500],
             latent_dim=latent_dim,
-            prior_alpha=cfg.alpha_init,
+            prior_lambda=None,
         ).to(device)
     else:
         raise ValueError(f"Unknown model_name in cfg: {cfg.model_name}")
@@ -109,7 +109,7 @@ def get_tsne_embedding(model, cfg, test_loader, device, tsne_samples=4000):
             elif mname in ("dirichlet", "dir"):
                 _, z, _, _ = model(xb)
             elif mname in ("cc", "ccvae", "continuous_categorical"):
-                _, z, _, _ = model(xb)   # TODO: replace with CCVAE once implemented
+                _, z, _= model(xb)
             else:
                 raise ValueError(f"Unknown model_name: {cfg.model_name}")
 
@@ -213,7 +213,7 @@ def main():
             elif mname in ("dirichlet", "dir"):
                 logits, z, _, _ = model(xb_flat)
             elif mname in ("cc", "ccvae", "continuous_categorical"):
-                _, z, _, _ = model(xb)   # TODO: replace with CCVAE once implemented !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                logits, z, lambda_norm = model(xb_flat)
             else:
                 raise ValueError(f"Unknown model_name: {cfg.model_name}")
 
