@@ -6,19 +6,19 @@
 
 
 entity: spicy-mlops
-project: vae-bottlenecks-test
-name: vae-bottlenecks-karo-test
+project: vae-bottlenecks-final-final
+name: vae-bottlenecks-final-final
 method: grid
 
 parameters:
   dataset:
     values: ["mnist", "medmnist"]
   model_name:
-    values: ["dirichlet", "gaussian"]    #, "cc"]
+    values: ["dirichlet", "gaussian", "cc"]    #, "cc"]
   lr:
-    values: [5e-4]   #, 0.001, 0.003]
+    values: [3e-4,5e-4,7e-4]   #, 0.001, 0.003]
   latent_dim:
-    values: [10] #, 50]  #, 50]
+    values: [3,5,8] #, 50]  #, 50]
 
 
 command:
