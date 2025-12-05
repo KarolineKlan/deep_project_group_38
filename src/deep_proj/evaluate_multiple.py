@@ -22,6 +22,8 @@ from .model import (
     CCVAE,
 )
 
+
+
 # -------------------------------------------------------------------
 # Project root (repo root)
 # -------------------------------------------------------------------
@@ -33,9 +35,10 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 # Number of images per row in the reconstruction comparison figure.
 # Change this to 10, 12, ... if you want more examples.
 N_RECON_SAMPLES = 12
-GAUSS_FINAL_MODEL = "final_sweep/final_sweep/mnist_gaussian_z8_lr0.0007_best.pt"
-DIR_FINAL_MODEL = "final_sweep/final_sweep/mnist_dirichlet_z8_lr0.0007_best.pt"
-CC_FINAL_MODEL = "final_sweep/final_sweep/mnist_cc_z3_lr0.0003_best.pt"  # placeholder for CC
+GAUSS_FINAL_MODEL = "final_sweep/mnist_gaussian_z8_lr0.0007_best.pt"
+DIR_FINAL_MODEL = "final_sweep/mnist_dirichlet_z8_lr0.0007_best.pt"
+CC_FINAL_MODEL = "final_sweep/mnist_cc_z3_lr0.0003_best.pt"  # placeholder for CC
+
 
 # -------------------------------------------------------------------
 # Device helper
@@ -141,9 +144,9 @@ def main():
 
     # Hard-coded checkpoints (adjust filenames to match your models)
     ckpts = [
-        ("Gaussian-VAE", os.path.join(project_root, "models", GAUSS_FINAL_MODEL)),
-        ("Dirichlet-VAE", os.path.join(project_root, "models", DIR_FINAL_MODEL)),
-        ("CC-VAE", os.path.join(project_root, "models", CC_FINAL_MODEL)),  # placeholder for CC
+        ("Gaussian-VAE (M=8)", os.path.join(project_root, "models", GAUSS_FINAL_MODEL)),
+        ("Dirichlet-VAE (M=8)", os.path.join(project_root, "models", DIR_FINAL_MODEL)),
+        ("CC-VAE (M=3)", os.path.join(project_root, "models", CC_FINAL_MODEL)),  # placeholder for CC
     ]
 
     embeddings = []
@@ -154,6 +157,9 @@ def main():
     base_batch = None        # normalized test images (N, 1, 28, 28)
     base_dataset = None
     recon_rows = []          # list of tensors (N, 784) per model
+
+        # <- NEW: will hold [0,1,4] etc. if present in cfg
+    legend_classes_from_cfg = None
 
     for idx, (title, ckpt_path) in enumerate(ckpts):
         if not os.path.exists(ckpt_path):
@@ -175,6 +181,13 @@ def main():
         print("  model_name:", cfg.model_name)
         print("  dataset   :", cfg.dataset)
         print("  latent_dim:", cfg.latent_dim)
+
+        # NEW: grab class subset once (they should be same across models)
+        if legend_classes_from_cfg is None:
+            if getattr(cfg, "mnist_classes", None) is not None:
+                legend_classes_from_cfg = list(cfg.mnist_classes)
+            elif getattr(cfg, "medmnist_classes", None) is not None:
+                legend_classes_from_cfg = list(cfg.medmnist_classes)
 
         # Build dataloaders and model
         loaders = get_dataloaders(cfg)
@@ -237,45 +250,63 @@ def main():
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
-    cmap = plt.get_cmap("tab10")
-    unique_classes = np.arange(10)
+    # Decide which classes should be in the legend
+    if legend_classes_from_cfg is not None:
+        unique_classes = np.array(legend_classes_from_cfg, dtype=int)
+    else:
+        unique_classes = np.unique(np.concatenate(labels_list)).astype(int)
 
+    # Build a stable color map: class_id -> color (inspired by simplex plot)
+    base_cmap = plt.get_cmap("tab10")
+    try:
+        palette = list(base_cmap.colors)
+    except AttributeError:
+        palette = [base_cmap(i) for i in range(base_cmap.N)]
+
+    color_map = {int(cls): palette[int(cls) % len(palette)] for cls in unique_classes}
+
+    # Plot each model using the SAME class→color mapping
     for ax, emb, labels, title in zip(axes, embeddings, labels_list, titles):
+        labels = labels.astype(int)
+        point_colors = [color_map[int(lbl)] for lbl in labels]
+
         ax.scatter(
             emb[:, 0],
             emb[:, 1],
-            c=labels,
-            cmap=cmap,
-            s=5,
+            c=point_colors,   # explicit RGBA colors, no normalization
+            s=15,
             alpha=0.7,
         )
         ax.set_title(title, fontsize=35)
         ax.set_xticks([])
         ax.set_yticks([])
 
+    # Legend that matches exactly the scatter colors
     legend_handles = [
         plt.Line2D(
             [0], [0],
             marker="o",
-            color=cmap(i),
+            color=color_map[int(cls)],
             linestyle="",
-            markersize=7,
-            label=str(i),
+            markersize=10,
+            label=str(int(cls)),
         )
-        for i in unique_classes
+        for cls in unique_classes
     ]
 
     fig.legend(
         handles=legend_handles,
-        ncol=10,
+        ncol=len(unique_classes),
         loc="lower center",
-        bbox_to_anchor=(0.5, -0.06), #and if i want it lower then i would do -0.1
+        bbox_to_anchor=(0.5, -0.06),
         frameon=False,
         fontsize=20,
     )
 
+
     plt.tight_layout(rect=[0, 0.05, 1, 1])
     plt.savefig(out_path_latent, dpi=200, bbox_inches="tight")
+    plt.savefig(out_path_latent.replace(".png", ".pdf"), dpi=200, bbox_inches="tight")
     plt.close()
 
     print(f"\nSaved 3-model latent comparison figure to:\n  {out_path_latent}\n")
@@ -337,8 +368,8 @@ def main():
             va="center",
             fontsize=40,
         )
-
     plt.savefig(out_path_recon, dpi=200, bbox_inches="tight")
+    plt.savefig(out_path_recon.replace(".png", ".pdf"), dpi=200, bbox_inches="tight")
     plt.close()
 
     print(f"Saved reconstruction comparison figure to:\n  {out_path_recon}\n")
