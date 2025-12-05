@@ -14,7 +14,7 @@ def _build_mnist(cfg: DictConfig):
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,)) #https://stackoverflow.com/questions/63746182/correct-way-of-normalizing-and-scaling-the-mnist-dataset
-    ])
+    ]) #standardization was first introduced because it can help with convergence during training, but was removed later in training favor of a simpler setup that mimics the paper
     train_dataset = datasets.MNIST(
         cfg.data_root, train=True, download=True, transform=transform
     )
@@ -47,9 +47,9 @@ def _build_mnist(cfg: DictConfig):
         test_dataset = torch.utils.data.Subset(test_dataset, test_indices)
 
         # Debug prints (safe to keep)
-        print(f"[MNIST FILTER] Selected classes: {selected}")
-        print(f"[MNIST FILTER] Train samples: {len(train_dataset)}")
-        print(f"[MNIST FILTER] Test samples:  {len(test_dataset)}")
+        #print(f"[MNIST FILTER] Selected classes: {selected}")
+        #print(f"[MNIST FILTER] Train samples: {len(train_dataset)}")
+        #print(f"[MNIST FILTER] Test samples:  {len(test_dataset)}")
 
     return train_dataset, test_dataset
 
@@ -98,10 +98,10 @@ def _build_medmnist(cfg: DictConfig):
         test_indices = np.where(test_mask)[0]
         test_dataset = torch.utils.data.Subset(test_dataset, test_indices)
 
-        print(f"[MEDMNIST FILTER] Subset: {data_flag}")
-        print(f"[MEDMNIST FILTER] Selected classes: {selected}")
-        print(f"[MEDMNIST FILTER] Train samples: {len(train_dataset)}")
-        print(f"[MEDMNIST FILTER] Test samples:  {len(test_dataset)}")
+        #print(f"[MEDMNIST FILTER] Subset: {data_flag}")
+        #print(f"[MEDMNIST FILTER] Selected classes: {selected}")
+        #print(f"[MEDMNIST FILTER] Train samples: {len(train_dataset)}")
+        #print(f"[MEDMNIST FILTER] Test samples:  {len(test_dataset)}")
     return train_dataset, test_dataset
 
 

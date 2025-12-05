@@ -1,6 +1,6 @@
 # Variational Autoencoders With Alternative Bottlenecks  
 
-<img src="project_images/VAE_figure.png" width="600"/>
+<img src="project_images/VAE_figure_FINAL.png" width="600"/>
 
 This repository contains the implementation for our Deep Learning project at DTU (course 02456), where we investigate how different latent bottlenecks affect the behaviour of a Variational Autoencoder (VAE).  
 Specifically, we compare:
